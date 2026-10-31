@@ -22,8 +22,11 @@ This skill provides full integration with GitHub Actions (CI/CD workflows, dispa
 3. **Cloud Build & Compilation**:
    - Automated remote APK/AAB builds for Android projects (`openminis-custom`, etc.).
    - Handling SDK licenses, `sdkmanager`, and Gradle builds in CI.
-4. **Safety & Fallbacks**:
-   - Fallback hierarchy: Local PRoot build → Termux Native build → GitHub Actions Cloud Build → GitHub Codespaces.
+4. **Safety & Fallbacks (1 - 3 - 4 Hierarchy)**:
+   - **Level 1 (Yerel Minis PRoot)**: Hafif işlemler, kod düzenleme, git yönetimi, mimari planlama ve orkestrasyon.
+   - **Level 3 (GitHub Actions CI/CD)**: Ağır derleme görevleri, Android APK/AAB üretimi, otomatik testler ve artefakt saklama.
+   - **Level 4 (GitHub Codespaces Bulut VM)**: İnteraktif hata ayıklama, Docker konteynerleri, doğrudan bulut terminali erişimi.
+   *(Level 2 kaldırılmıştır: Cihaz içi native derleme yerine doğrudan bulut orkestrasyonu kullanılır).*
    - Authentication via secure `GITHUB_TOKEN`.
 
 ## Directory Structure
