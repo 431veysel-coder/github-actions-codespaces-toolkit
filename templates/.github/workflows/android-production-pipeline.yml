@@ -1,0 +1,93 @@
+name: Android Production Build Pipeline
+
+on:
+  push:
+    branches: [ "main", "master", "release/*" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build Type (debug/release/both)'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+        - debug
+        - release
+        - both
+      clean_cache:
+        description: 'Clean Gradle cache before build'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  preflight-and-build:
+    name: Build & Package Android APK/AAB
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+    - name: Checkout Source Code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+        cache: 'gradle'
+
+    - name: Set up Go & Gomobile (for native JNI / gobind bindings)
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+        cache: false
+      continue-on-error: true
+
+    - name: Install Gobind and Gomobile Toolchain
+      run: |
+        go install golang.org/x/mobile/cmd/gobind@latest || true
+        go install golang.org/x/mobile/cmd/gomobile@latest || true
+        echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+      continue-on-error: true
+
+    - name: Setup Android SDK Tools
+      uses: android-actions/setup-android@v3
+
+    - name: Accept Android SDK Licenses
+      run: |
+        yes | sdkmanager --licenses || true
+
+    - name: Grant Execute Permission to Gradle Wrapper
+      run: chmod +x gradlew
+
+    - name: Run Build (Debug)
+      if: ${{ inputs.build_type == 'debug' || inputs.build_type == 'both' || github.event_name == 'push' }}
+      run: ./gradlew assembleDebug --stacktrace
+
+    - name: Run Build (Release)
+      if: ${{ inputs.build_type == 'release' || inputs.build_type == 'both' }}
+      run: ./gradlew assembleRelease --stacktrace
+      continue-on-error: true
+
+    - name: Upload Debug APK Artifact
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: android-debug-apk
+        path: app/build/outputs/apk/debug/*.apk
+        if-no-files-found: ignore
+
+    - name: Upload Release APK/AAB Artifact
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: android-release-artifacts
+        path: |
+          app/build/outputs/apk/release/*.apk
+          app/build/outputs/bundle/release/*.aab
+        if-no-files-found: ignore

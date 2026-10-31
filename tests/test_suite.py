@@ -19,6 +19,17 @@ class TestGitHubActionsCodespacesToolkit(unittest.TestCase):
         base = os.path.abspath(os.path.join(os.path.dirname(__file__), '../scripts'))
         self.assertTrue(os.path.exists(os.path.join(base, 'gh_actions.py')))
         self.assertTrue(os.path.exists(os.path.join(base, 'gh_codespaces.py')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/dependency_graph.py')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/build_monitor.py')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/pipeline_orchestrator.py')))
+
+    def test_android_diagnostics(self):
+        import sys
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../scripts/android_pipeline')))
+        from build_monitor import AndroidBuildDiagnostics
+        sample_log = "error: licences have not been accepted\nBUILD FAILED"
+        diag = AndroidBuildDiagnostics.analyze_log(sample_log)
+        self.assertEqual(diag["stage_failed"], "sdk_setup")
 
 if __name__ == "__main__":
     unittest.main()
