@@ -27,6 +27,9 @@ from version_bumper import VersionBumper
 from builidroid_fixer import BuilDroidFixer
 from security_acl import AgentSecurityACL
 from appium_bridge import AppiumUIBridge
+from changelog_automator import ChangelogAutomator
+from sbom_generator import SBOMGenerator
+from vault_adapter import EnterpriseVaultManager
 
 app = MCPServer("github-actions-codespaces-toolkit")
 
@@ -271,6 +274,27 @@ def translate_visual_ui_test(natural_language_prompt: str) -> str:
     bridge = AppiumUIBridge()
     res = bridge.translate_natural_language_to_action(natural_language_prompt)
     return json.dumps(res, indent=2)
+
+@app.tool()
+def generate_changelog(version_tag: str = "v1.0.0", project_path: str = ".") -> str:
+    """Automatically generate and update CHANGELOG.md from Git commit history and version tags"""
+    automator = ChangelogAutomator(project_path)
+    ok, path = automator.generate_changelog(version_tag)
+    return json.dumps({"success": ok, "changelog_path": path})
+
+@app.tool()
+def generate_sbom(project_path: str = ".") -> str:
+    """Generate standard CycloneDX Software Bill of Materials (SBOM) JSON report"""
+    generator = SBOMGenerator(project_path)
+    ok, path = generator.generate_sbom()
+    return json.dumps({"success": ok, "sbom_path": path})
+
+@app.tool()
+def resolve_enterprise_secret(secret_name: str, backend: str = "local") -> str:
+    """Resolve secret from enterprise KMS vault adapter (AWS KMS / Vault / Local Fernet)"""
+    mgr = EnterpriseVaultManager(backend)
+    val = mgr.resolve_secret(secret_name)
+    return json.dumps({"secret_name": secret_name, "resolved": bool(val), "preview": val[:4] + "***" if val else "not_found"})
 
 async def main():
     await app.run_stdio_async()
