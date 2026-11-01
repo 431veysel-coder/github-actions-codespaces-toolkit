@@ -26,6 +26,7 @@ class TestGitHubActionsCodespacesToolkit(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/gitops_manager.py')))
         self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/ota_bridge.py')))
         self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/apk_profiler.py')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/autonomous_nexus.py')))
 
     def test_android_diagnostics(self):
         import sys
@@ -34,6 +35,13 @@ class TestGitHubActionsCodespacesToolkit(unittest.TestCase):
         sample_log = "error: licences have not been accepted\nBUILD FAILED"
         diag = AndroidBuildDiagnostics.analyze_log(sample_log)
         self.assertEqual(diag["stage_failed"], "sdk_setup")
+
+    def test_offline_autonomous_nexus_mock(self):
+        import sys
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../scripts/android_pipeline')))
+        from autonomous_nexus import AutonomousNexusCore
+        nexus = AutonomousNexusCore("test/repo", project_path="/tmp")
+        self.assertIsNotNone(nexus)
 
 if __name__ == "__main__":
     unittest.main()

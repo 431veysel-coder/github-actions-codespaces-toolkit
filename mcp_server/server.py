@@ -16,6 +16,7 @@ from auto_fixer import AutoFixEngine
 from gitops_manager import GitOpsManager
 from ota_bridge import OTABridge
 from apk_profiler import APKProfiler
+from autonomous_nexus import AutonomousNexusCore
 
 app = MCPServer("github-actions-codespaces-toolkit")
 
@@ -159,6 +160,13 @@ def profile_built_apk(apk_path: str) -> str:
     """Inspect built APK size, DEX count, native libraries, and asset composition"""
     report = APKProfiler.profile_apk(apk_path)
     return json.dumps(report, indent=2)
+
+@app.tool()
+def run_autonomous_cycle(repo: str, project_path: str = ".") -> str:
+    """Run full closed-loop autonomous cybernetic build & telemetry cycle (Nexus OS)"""
+    nexus = AutonomousNexusCore(repo, project_path)
+    res = nexus.execute_autonomous_cycle()
+    return json.dumps(res, indent=2)
 
 async def main():
     await app.run_stdio_async()
