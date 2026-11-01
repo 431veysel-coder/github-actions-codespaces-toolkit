@@ -1,30 +1,134 @@
-name: Toolkit Dogfooding CI
+name: Toolkit CI
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [master, main]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [master, main]
 
 jobs:
-  test-and-verify:
-    name: Run Toolkit Unit Tests & Pre-flight Checks
+  test:
+    name: Test Suite
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
 
-    - name: Install Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install cryptography mcp
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mcp
 
-    - name: Run Full Test Suite
-      run: |
-        python3 -m unittest discover tests
+      - name: Run test suite
+        run: |
+          cd /var/minis/skills/github-actions-codespaces 2>/dev/null || true
+          python3 tests/test_suite.py
+
+  lint:
+    name: Lint & Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install linting tools
+        run: |
+          pip install flake8 black isort
+
+      - name: Check Python formatting
+        run: |
+          black --check --diff .
+          isort --check --diff .
+          flake8 .
+
+  validate-mcp:
+    name: Validate MCP Server
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install mcp
+
+      - name: Validate MCP server imports
+        run: |
+          python3 -c "
+import sys
+sys.path.insert(0, 'mcp_server')
+import server
+print('MCP server imports successfully')
+print(f'Tools registered: {len(server.app._tools)}')
+"
+
+  verify-docs:
+    name: Verify Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check required files
+        run: |
+          test -f README.md && echo "✓ README.md exists"
+          test -f LICENSE && echo "✓ LICENSE exists"
+          test -f CONTRIBUTING.md && echo "✓ CONTRIBUTING.md exists"
+          test -f SECURITY.md && echo "✓ SECURITY.md exists"
+          test -f SKILL.md && echo "✓ SKILL.md exists"
+          test -f ANDROID_PIPELINE.md && echo "✓ ANDROID_PIPELINE.md exists"
+          test -f .github/PULL_REQUEST_TEMPLATE.md && echo "✓ PR template exists"
+          test -f .github/ISSUE_TEMPLATE/bug_report.md && echo "✓ Bug template exists"
+          test -f .github/ISSUE_TEMPLATE/feature_request.md && echo "✓ Feature template exists"
+
+  docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t github-actions-codespaces-toolkit:latest .
+          echo "Docker image built successfully"
+
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, lint, validate-mcp, verify-docs]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        run: |
+          python3 scripts/android_pipeline/changelog_automator.py "${GITHUB_REF_NAME}"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: CHANGELOG.md
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
