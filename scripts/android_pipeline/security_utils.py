@@ -9,6 +9,7 @@ import re
 import json
 import subprocess
 import shlex
+import tempfile
 from pathlib import Path
 from typing import Optional, List, Tuple, Any, Dict
 from functools import wraps
@@ -23,6 +24,8 @@ ALLOWED_WRITE_ROOTS = [
     WORKSPACE_ROOT,
     Path("/tmp").resolve(),
     Path.home().resolve(),
+    Path(tempfile.gettempdir()).resolve(),
+    Path("/data/user/0/com.openminis.app/cache").resolve(),
 ]
 
 # Commands that are NEVER allowed
@@ -160,19 +163,24 @@ def validate_file_path(path: str, must_exist: bool = False, allow_outside_worksp
     except Exception as e:
         raise ValidationError("INVALID_PATH", f"Cannot resolve path: {e}")
     
-    # Check for path traversal attempts
-    if ".." in path or path.startswith("/") and not allow_outside_workspace:
-        # Check if it tries to escape workspace
+    # Check if path is under any allowed write root
+    is_allowed = False
+    for allowed_root in ALLOWED_WRITE_ROOTS:
         try:
-            resolved.relative_to(WORKSPACE_ROOT)
+            resolved.relative_to(allowed_root)
+            is_allowed = True
+            break
         except ValueError:
-            # Path is outside workspace
-            if not allow_outside_workspace:
-                raise PathTraversalError(
-                    "PATH_TRAVERSAL",
-                    f"Path escapes workspace boundary: '{path}'",
-                    f"Allowed roots: {', '.join(str(p) for p in ALLOWED_WRITE_ROOTS)}"
-                )
+            continue
+    
+    # If not under any allowed root, check workspace traversal
+    if not is_allowed:
+        if not allow_outside_workspace:
+            raise PathTraversalError(
+                "PATH_TRAVERSAL",
+                f"Path escapes allowed workspace boundaries: '{path}'",
+                f"Allowed roots: {', '.join(str(p) for p in ALLOWED_WRITE_ROOTS)}"
+            )
     
     # Check against blocked paths
     for blocked in BLOCKED_WRITE_PATHS:
