@@ -22,6 +22,8 @@ from vault_crypto import VaultCryptoEngine
 from memory_manager import PipelineMemoryManager
 from size_optimizer import AppSizeOptimizer
 from cache_engine import CacheEngine
+from project_detector import ProjectTypeDetector
+from version_bumper import VersionBumper
 
 app = MCPServer("github-actions-codespaces-toolkit")
 
@@ -228,6 +230,18 @@ def trigger_daemon_cycle(repo: str) -> str:
     daemon = NexusDaemon(repo)
     daemon.poll_latest_failure_and_fix()
     return json.dumps({"status": "cycle_executed", "repo": repo})
+
+@app.tool()
+def detect_project_architecture(project_path: str = ".") -> str:
+    """Automatically detect project type (Native Android, Flutter, React Native, KMP)"""
+    ptype = ProjectTypeDetector.detect(project_path)
+    return json.dumps({"detected_project_type": ptype})
+
+@app.tool()
+def bump_gradle_version(project_path: str = ".") -> str:
+    """Automatically calculate and bump versionCode and versionName from Git history"""
+    success, info = VersionBumper.bump_gradle_files(project_path)
+    return json.dumps({"bounced": success, "version_info": info})
 
 async def main():
     await app.run_stdio_async()
