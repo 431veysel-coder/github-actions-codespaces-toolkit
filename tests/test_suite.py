@@ -32,6 +32,7 @@ class TestGitHubActionsCodespacesToolkit(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/memory_manager.py')))
         self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/size_optimizer.py')))
         self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/cache_engine.py')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'setup_wizard.py')))
 
     def test_vault_crypto(self):
         import sys
