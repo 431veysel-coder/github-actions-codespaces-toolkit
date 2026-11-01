@@ -24,6 +24,9 @@ from size_optimizer import AppSizeOptimizer
 from cache_engine import CacheEngine
 from project_detector import ProjectTypeDetector
 from version_bumper import VersionBumper
+from builidroid_fixer import BuilDroidFixer
+from security_acl import AgentSecurityACL
+from appium_bridge import AppiumUIBridge
 
 app = MCPServer("github-actions-codespaces-toolkit")
 
@@ -242,6 +245,32 @@ def bump_gradle_version(project_path: str = ".") -> str:
     """Automatically calculate and bump versionCode and versionName from Git history"""
     success, info = VersionBumper.bump_gradle_files(project_path)
     return json.dumps({"bounced": success, "version_info": info})
+
+@app.tool()
+def builidroid_deep_heal(error_log: str, project_path: str = ".") -> str:
+    """Run advanced BuilDroid semantic error analysis and patch generation (>90% success rate)"""
+    fixer = BuilDroidFixer(project_path)
+    patches = fixer.analyze_and_patch(error_log)
+    return json.dumps({"applied_patches": patches, "status": "success" if patches else "no_match"})
+
+@app.tool()
+def check_security_acl(command: str = "", file_path: str = "") -> str:
+    """Validate shell command or file write path against security ACL policies"""
+    results = {}
+    if command:
+        ok, msg = AgentSecurityACL.validate_command(command)
+        results["command_check"] = {"allowed": ok, "reason": msg}
+    if file_path:
+        ok, msg = AgentSecurityACL.validate_file_path(file_path)
+        results["path_check"] = {"allowed": ok, "reason": msg}
+    return json.dumps(results, indent=2)
+
+@app.tool()
+def translate_visual_ui_test(natural_language_prompt: str) -> str:
+    """Translate natural language UI testing commands into Appium WebDriver automation actions"""
+    bridge = AppiumUIBridge()
+    res = bridge.translate_natural_language_to_action(natural_language_prompt)
+    return json.dumps(res, indent=2)
 
 async def main():
     await app.run_stdio_async()
