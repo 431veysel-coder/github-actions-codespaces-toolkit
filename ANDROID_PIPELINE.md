@@ -103,3 +103,15 @@ Bir Android projesinin sıfırdan üretilmesi ve derlenmesi 8 kesin aşamadan ol
 - **`apk_profiler.py`**: DEX method count and component composition inspector.
 - **`autonomous_nexus.py`**: Cybernetic meta-controller for telemetry and end-to-end autonomous loops.
 - **`autonomous_daemon.py`**: Asynchronous background watcher daemon for automated polling and healing.
+
+---
+
+## 7. Elite Pipeline Modules Reference (`scripts/android_pipeline/`)
+
+- **`builidroid_fixer.py`**: Advanced semantic error analysis and patch generation (>90% compilation success rate).
+- **`appium_bridge.py`**: Translates natural language UI test commands into Appium WebDriver automation.
+- **`security_acl.py`**: Enforces command/path scoping and Human-In-The-Loop (HITL) approval gates.
+- **`project_detector.py`**: Automatically detects project architecture (Native Android, Flutter, React Native, KMP).
+- **`version_bumper.py`**: Dynamically calculates and bumps `versionCode` and `versionName` from Git history.
+- **`dashboard_generator.py`**: Produces a real-time HTML telemetry and monitoring dashboard from `metrics.jsonl`.
+- **`setup_wizard.py`**: Indie hacker interactive onboarding script for 1-click environment priming.
