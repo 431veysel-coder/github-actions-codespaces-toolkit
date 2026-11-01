@@ -1,28 +1,25 @@
 #!/usr/bin/env python3
 """
-Vault Crypto & Keystore Security Engine (Şifreleme, Çözümleme, Kriptonik, Triptonik)
-Manages AES-256 encryption/decryption for local keystores, secrets management,
-and automated injection of signing credentials into GitHub Actions Secrets.
+Advanced Vault Crypto & Keystore Manager (Enhanced)
+Handles AES-256 Fernet encryption, binary .jks keystore base64 encoding/decoding
+for secure Android code signing, and automated GitHub Secret synchronization.
 """
 
 import os
-import subprocess
 import base64
+import subprocess
 from cryptography.fernet import Fernet
 
 class VaultCryptoEngine:
     def __init__(self, master_key=None):
-        # Generate or load a local Fernet key for cryptographic transformations
         self.key = master_key.encode() if master_key else Fernet.generate_key()
         self.cipher = Fernet(self.key)
 
     def encrypt_secret(self, plaintext: str) -> str:
-        """Kriptonik / Şifreleme: Encrypts sensitive API keys or passwords"""
         encrypted = self.cipher.encrypt(plaintext.encode())
         return base64.b64encode(encrypted).decode()
 
     def decrypt_secret(self, ciphertext: str) -> str:
-        """Kriptonik / Çözümleme: Decrypts encrypted ciphertexts"""
         decoded = base64.b64decode(ciphertext.encode())
         return self.cipher.decrypt(decoded).decode()
 
@@ -30,10 +27,22 @@ class VaultCryptoEngine:
         """Triptonik: Multi-layered polymorphic string transformation for asset obfuscation"""
         b1 = base64.b85encode(data.encode()).decode()
         b2 = base64.b64encode(b1.encode()).decode()
-        return b2[::-1]  # Reversed base64/base85 sandwich
+        return b2[::-1]
+
+    def encode_keystore_binary(self, jks_path: str) -> str:
+        """Encodes a binary .jks keystore file into a safe Base64 string for GitHub Secrets storage"""
+        if not os.path.exists(jks_path):
+            raise FileNotFoundError(f"Keystore file not found at {jks_path}")
+        with open(jks_path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+
+    def decode_keystore_binary(self, b64_data: str, output_path: str):
+        """Decodes Base64 string back into a binary .jks keystore file for local or cloud build signing"""
+        with open(output_path, "wb") as f:
+            f.write(base64.b64decode(b64_data.encode()))
+        return output_path
 
     def inject_github_secret(self, repo: str, secret_name: str, secret_value: str):
-        """Injects encrypted secrets into GitHub Actions repository secrets via GH CLI"""
         try:
             cmd = ["gh", "secret", "set", secret_name, "--repo", repo, "--body", secret_value]
             subprocess.run(cmd, check=True, capture_output=True, text=True)

@@ -211,6 +211,24 @@ def clean_pipeline_caches(project_path: str = ".") -> str:
     cleaned = CacheEngine.clean_local_gradle_caches(project_path)
     return json.dumps({"cleaned_paths": cleaned}, indent=2)
 
+@app.tool()
+def encode_keystore_binary(jks_path: str) -> str:
+    """Encode binary .jks Android keystore into Base64 for secure storage in GitHub Secrets"""
+    engine = VaultCryptoEngine()
+    try:
+        b64 = engine.encode_keystore_binary(jks_path)
+        return json.dumps({"status": "success", "base64_keystore": b64[:50] + "...[truncated]"})
+    except Exception as e:
+        return json.dumps({"status": "error", "message": str(e)})
+
+@app.tool()
+def trigger_daemon_cycle(repo: str) -> str:
+    """Trigger one single poll and self-healing cycle of the autonomous background daemon"""
+    from autonomous_daemon import NexusDaemon
+    daemon = NexusDaemon(repo)
+    daemon.poll_latest_failure_and_fix()
+    return json.dumps({"status": "cycle_executed", "repo": repo})
+
 async def main():
     await app.run_stdio_async()
 
