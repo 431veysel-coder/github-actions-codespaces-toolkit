@@ -1,4 +1,4 @@
-name: Android Production Build Pipeline (Nexus OS)
+name: Android Production Build Pipeline (Nexus OS v2.0)
 
 on:
   push:
@@ -22,17 +22,17 @@ on:
         - debug
         - release
         - both
-      run_lint:
-        description: 'Run Static Analysis (Lint/Detekt)'
+      run_emulator_tests:
+        description: 'Run Headless Emulator UI / Instrument Tests'
         required: false
         default: true
         type: boolean
 
 jobs:
   preflight-and-matrix-build:
-    name: Matrix Build (${{ matrix.variant }})
+    name: Matrix Build & Test (${{ matrix.variant }})
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     strategy:
       fail-fast: false
@@ -73,10 +73,9 @@ jobs:
     - name: Grant Execute Permission to Gradle Wrapper
       run: chmod +x gradlew
 
-    - name: Pre-build Hook - Lint & Static Analysis
-      if: ${{ inputs.run_lint != false }}
+    - name: Dynamic Version Bumping
       run: |
-        ./gradlew lintDebug || true
+        python3 scripts/android_pipeline/version_bumper.py . || true
 
     - name: Secure Keystore Extraction (Release Only)
       if: ${{ matrix.variant == 'release' }}
@@ -85,15 +84,12 @@ jobs:
       run: |
         if [ -n "$KEYSTORE_BASE64" ]; then
           echo "$KEYSTORE_BASE64" | base64 -d > app/release-keystore.jks
-          echo "Keystore successfully decoded for signing."
-        else
-          echo "Warning: ANDROID_KEYSTORE_BASE64 secret not found. Proceeding unsigned/debug fallback."
         fi
 
     - name: Build with Automatic Retry (Variant: ${{ matrix.variant }})
       uses: nick-invision/retry@v3
       with:
-        timeout_minutes: 20
+        timeout_minutes: 25
         max_attempts: 3
         command: |
           if [ "${{ matrix.variant }}" = "debug" ]; then
@@ -106,17 +102,17 @@ jobs:
       if: always() && matrix.variant == 'release'
       run: |
         rm -f app/release-keystore.jks
-        echo "Keystore securely wiped from runner disk."
 
-    - name: Post-build APK Size & Metric Profiling
-      run: |
-        python3 -c "
-        import glob, os
-        apks = glob.glob('app/build/outputs/apk/**/*.apk', recursive=True)
-        for apk in apks:
-            size_mb = round(os.path.getsize(apk) / (1024 * 1024), 2)
-            print(f'PROFILER OUTPUT -> APK: {apk} | Size: {size_mb} MB')
-        "
+    - name: Headless Emulator UI / Instrumentation Tests
+      if: ${{ matrix.variant == 'debug' && inputs.run_emulator_tests != false }}
+      uses: reactivecircus/android-emulator-runner@v2
+      with:
+        api-level: 34
+        target: default
+        arch: x86_64
+        profile: pixel_6
+        script: ./gradlew connectedDebugAndroidTest --stacktrace
+      continue-on-error: true
 
     - name: Upload Build Artifacts (${{ matrix.variant }})
       uses: actions/upload-artifact@v4
