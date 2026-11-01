@@ -1,0 +1,21 @@
+{
+  "name": "Minis Android & Cloud Development",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "17",
+      "installMaven": false,
+      "installGradle": true
+    },
+    "ghcr.io/devcontainers/features/android:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "vscjava.vscode-java-pack",
+        "ms-vscode.vscode-node-azure-pack"
+      ]
+    }
+  },
+  "postCreateCommand": "sdkmanager --licenses || true"
+}

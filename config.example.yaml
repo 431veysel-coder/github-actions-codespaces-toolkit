@@ -1,0 +1,91 @@
+github:
+  token: ""  # Set via GITHUB_TOKEN environment variable
+  api_url: https://api.github.com
+  timeout: 30
+  max_retries: 3
+  rate_limit_buffer: 100
+android:
+  sdk_root: /opt/android-sdk
+  ndk_version: 26.1.10909125
+  build_tools_version: 34.0.0
+  compile_sdk: 34
+  min_sdk: 24
+  target_sdk: 34
+  gradle_version: '8.5'
+  kotlin_version: 1.9.0
+  jvm_args: -Xmx4g -XX:+UseG1GC
+  parallel_workers: 4
+codespaces:
+  machine_type: standardLinux32gb
+  idle_timeout: 30
+  retention_days: 30
+  dotfiles_repo: ''
+  dotfiles_path: ''
+security:
+  enable_hitl: true
+  allowed_write_roots:
+  - /var/minis/workspace
+  - /tmp
+  - /root
+  blocked_paths:
+  - /etc
+  - /usr
+  - /boot
+  - /sys
+  - /proc
+  - /dev
+  - /run
+  - /var/minis/memory
+  - /var/minis/shared
+  blocked_commands:
+  - rm -rf /
+  - git push --force
+  - drop database
+  - mkfs
+  - dd if=
+  - chmod 777 /
+  - chown root /
+  - mount
+  - umount
+  secret_masking: true
+  audit_logging: true
+memory:
+  db_path: /var/minis/workspace/pipeline_memory.db
+  enable_wal: true
+  cache_size_mb: 32
+  default_ttl_seconds: 3600
+  max_transient_entries: 10000
+  cleanup_interval_hours: 24
+  vacuum_on_startup: false
+vault:
+  backend: local
+  local_key: ''
+  local_storage_path: ~/.minis/vault
+  aws_region: us-east-1
+  aws_key_id: ''
+  vault_url: http://localhost:8200
+  vault_token: ''
+  vault_mount_path: secret
+  azure_vault_url: ''
+  gcp_project_id: ''
+pipeline:
+  max_concurrent_builds: 2
+  build_timeout_minutes: 60
+  artifact_retention_days: 7
+  auto_fix_max_attempts: 3
+  enable_daemon: false
+  daemon_poll_interval_minutes: 15
+  enable_telemetry: true
+  telemetry_endpoint: ''
+logging:
+  level: INFO
+  format: json
+  output: stdout
+  file_path: /var/minis/workspace/logs/pipeline.log
+  max_file_size_mb: 100
+  backup_count: 5
+  include_timestamp: true
+  include_correlation_id: true
+environment: development
+debug: false
+config_file: ''
