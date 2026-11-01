@@ -12,6 +12,10 @@ if pipeline_path not in sys.path:
 
 from dependency_graph import AndroidProjectAnalyzer
 from build_monitor import AndroidBuildDiagnostics
+from auto_fixer import AutoFixEngine
+from gitops_manager import GitOpsManager
+from ota_bridge import OTABridge
+from apk_profiler import APKProfiler
 
 app = MCPServer("github-actions-codespaces-toolkit")
 
@@ -127,6 +131,34 @@ def download_run_artifacts(repo: str, run_id: str, output_dir: str = "/var/minis
         return f"Artifacts successfully downloaded to {output_dir}"
     except subprocess.CalledProcessError as e:
         return f"Error downloading artifacts: {e.stderr or e.stdout}"
+
+@app.tool()
+def auto_fix_build(error_type: str, project_path: str = ".") -> str:
+    """Automatically apply closed-loop self-healing patch for a diagnosed build error and commit/push fix"""
+    engine = AutoFixEngine(project_path)
+    fixes = engine.apply_patch_for_error(error_type)
+    if fixes:
+        ok, msg = engine.commit_and_push(f"fix(autofix): self-healing patch for {error_type}")
+        return json.dumps({"applied_fixes": fixes, "push_status": msg}, indent=2)
+    return "No automated patch available for this error type."
+
+@app.tool()
+def create_gitops_pr(repo: str, title: str, body: str, head_branch: str, base_branch: str = "main") -> str:
+    """Create a GitHub Pull Request for automated GitOps workflow"""
+    ok, msg = GitOpsManager.create_pull_request(repo, title, body, head_branch, base_branch)
+    return json.dumps({"success": ok, "result": msg}, indent=2)
+
+@app.tool()
+def prepare_ota_install(apk_path: str) -> str:
+    """Trigger on-device installation bridge or preview link for a downloaded APK"""
+    ok, msg = OTABridge.prepare_apk_for_install(apk_path)
+    return json.dumps({"status": ok, "message": msg}, indent=2)
+
+@app.tool()
+def profile_built_apk(apk_path: str) -> str:
+    """Inspect built APK size, DEX count, native libraries, and asset composition"""
+    report = APKProfiler.profile_apk(apk_path)
+    return json.dumps(report, indent=2)
 
 async def main():
     await app.run_stdio_async()

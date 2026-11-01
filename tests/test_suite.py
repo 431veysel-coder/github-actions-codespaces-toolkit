@@ -22,6 +22,10 @@ class TestGitHubActionsCodespacesToolkit(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/dependency_graph.py')))
         self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/build_monitor.py')))
         self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/pipeline_orchestrator.py')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/auto_fixer.py')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/gitops_manager.py')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/ota_bridge.py')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/apk_profiler.py')))
 
     def test_android_diagnostics(self):
         import sys
