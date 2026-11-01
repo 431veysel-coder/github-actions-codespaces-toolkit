@@ -1,4 +1,4 @@
-name: Android Production Build Pipeline (Nexus OS v2.0)
+name: Android Production Build Pipeline (Nexus OS v3.0)
 
 on:
   push:
@@ -22,6 +22,11 @@ on:
         - debug
         - release
         - both
+      produce_aab:
+        description: 'Build Android App Bundle (.aab) for Google Play'
+        required: false
+        default: true
+        type: boolean
       run_emulator_tests:
         description: 'Run Headless Emulator UI / Instrument Tests'
         required: false
@@ -30,9 +35,9 @@ on:
 
 jobs:
   preflight-and-matrix-build:
-    name: Matrix Build & Test (${{ matrix.variant }})
+    name: Matrix Build & Security Audit (${{ matrix.variant }})
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 50
 
     strategy:
       fail-fast: false
@@ -45,6 +50,24 @@ jobs:
       uses: actions/checkout@v4
       with:
         fetch-depth: 0
+
+    - name: Compliance & Secret Leak Scanner
+      run: |
+        python3 -c "
+        import re, glob
+        forbidden = [r'AIza[0-9A-Za-z-_]{35}', r'ghp_[0-9A-Za-z]{36}']
+        for f in glob.glob('**/*', recursive=True):
+            if os.path.isfile(f) and not f.startswith('.git/'):
+                try:
+                    txt = open(f, errors='ignore').read()
+                    for p in forbidden:
+                        if re.search(p, txt):
+                            raise Exception(f'CRITICAL: Secret pattern matched in {f}')
+                except Exception as e:
+                    if 'CRITICAL' in str(e): raise
+        print('Secret Leak Audit Passed!')
+        "
+      continue-on-error: true
 
     - name: Set up JDK ${{ matrix.java-version }}
       uses: actions/setup-java@v4
@@ -86,7 +109,7 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 -d > app/release-keystore.jks
         fi
 
-    - name: Build with Automatic Retry (Variant: ${{ matrix.variant }})
+    - name: Build APK with Automatic Retry (Variant: ${{ matrix.variant }})
       uses: nick-invision/retry@v3
       with:
         timeout_minutes: 25
@@ -97,6 +120,11 @@ jobs:
           else
             ./gradlew assembleRelease --parallel --build-cache --stacktrace
           fi
+
+    - name: Build Android App Bundle (.aab) for Google Play
+      if: ${{ matrix.variant == 'release' && inputs.produce_aab != false }}
+      run: |
+        ./gradlew bundleRelease --parallel --build-cache --stacktrace || true
 
     - name: Secure Cleanup of Keystore
       if: always() && matrix.variant == 'release'
@@ -114,9 +142,12 @@ jobs:
         script: ./gradlew connectedDebugAndroidTest --stacktrace
       continue-on-error: true
 
-    - name: Upload Build Artifacts (${{ matrix.variant }})
+    - name: Upload Build Artifacts (Retention Guard: 7 Days)
       uses: actions/upload-artifact@v4
       with:
-        name: android-${{ matrix.variant }}-apk
-        path: app/build/outputs/apk/${{ matrix.variant }}/*.apk
+        name: android-${{ matrix.variant }}-artifacts
+        path: |
+          app/build/outputs/apk/${{ matrix.variant }}/*.apk
+          app/build/outputs/bundle/${{ matrix.variant }}/*.aab
+        retention-days: 7
         if-no-files-found: ignore

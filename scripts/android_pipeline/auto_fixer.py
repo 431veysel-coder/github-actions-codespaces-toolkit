@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Closed-Loop Auto-Fix / Self-Healing Engine (AI-Driven Neural Upgrade)
-Combines static pattern matching with LLM-assisted reasoning to autonomously
-generate patches for complex compilation and syntax errors.
+Closed-Loop Auto-Fix / Self-Healing Engine (Circuit Breaker Upgrade)
+Implements a strict Circuit Breaker (max 3 retry attempts per error fingerprint)
+to prevent infinite AI build loops, GitHub Actions quota exhaustion, and rate-limiting.
 """
 
 import os
@@ -13,8 +13,33 @@ class AutoFixEngine:
     def __init__(self, project_path="."):
         self.project_path = os.path.abspath(project_path)
         self.app_dir = os.path.join(self.project_path, "app")
+        self.state_file = os.path.join(self.project_path, ".gradle/autofix_state.json")
+
+    def _check_circuit_breaker(self, error_type: str) -> bool:
+        """Returns True if repair is allowed, False if circuit breaker tripped (max 3 attempts)"""
+        state = {}
+        if os.path.exists(self.state_file):
+            try:
+                with open(self.state_file, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+            except Exception:
+                pass
+
+        attempts = state.get(error_type, 0)
+        if attempts >= 3:
+            print(f"[!] CIRCUIT BREAKER TRIPPED: Error type '{error_type}' has failed {attempts} consecutive times. Stopping autonomous repair to prevent infinite loops.")
+            return False
+
+        state[error_type] = attempts + 1
+        os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+        with open(self.state_file, "w", encoding="utf-8") as f:
+            json.dump(state, f)
+        return True
 
     def apply_patch_for_error(self, error_type, file_hint=None, error_log=None):
+        if not self._check_circuit_breaker(error_type):
+            return [f"Circuit breaker tripped for {error_type}. Manual intervention required."]
+
         fixes_applied = []
         
         # 1. Missing internet permission in Manifest
@@ -51,10 +76,6 @@ class AutoFixEngine:
                 with open(os.path.join(self.app_dir, "proguard-rules.pro"), "w", encoding="utf-8") as f:
                     f.write(rule_addition)
                 fixes_applied.append("Created proguard-rules.pro and added safety keep rules")
-
-        # 4. Neural / LLM-assisted fallback patching for unresolved references or syntax issues
-        elif error_type == "code_syntax_or_type" or error_type == "compilation_kotlinc_javac":
-            fixes_applied.append(f"AI Neural Fixer analyzed error log: '{error_log[:100] if error_log else 'Unknown'}'. Suggested code restructure synthesized.")
 
         return fixes_applied
 
