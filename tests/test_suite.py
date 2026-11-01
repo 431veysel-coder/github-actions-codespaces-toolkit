@@ -27,6 +27,23 @@ class TestGitHubActionsCodespacesToolkit(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/ota_bridge.py')))
         self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/apk_profiler.py')))
         self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/autonomous_nexus.py')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/guardians.py')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/vault_crypto.py')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/memory_manager.py')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/size_optimizer.py')))
+        self.assertTrue(os.path.exists(os.path.join(base, 'android_pipeline/cache_engine.py')))
+
+    def test_vault_crypto(self):
+        import sys
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../scripts/android_pipeline')))
+        from vault_crypto import VaultCryptoEngine
+        v = VaultCryptoEngine()
+        secret = "super_secret_keystore_pass"
+        enc = v.encrypt_secret(secret)
+        dec = v.decrypt_secret(enc)
+        self.assertEqual(secret, dec)
+        triptonic = v.triptonic_transform(secret)
+        self.assertIsNotNone(triptonic)
 
     def test_android_diagnostics(self):
         import sys

@@ -17,6 +17,11 @@ from gitops_manager import GitOpsManager
 from ota_bridge import OTABridge
 from apk_profiler import APKProfiler
 from autonomous_nexus import AutonomousNexusCore
+from guardians import PipelineGuardian
+from vault_crypto import VaultCryptoEngine
+from memory_manager import PipelineMemoryManager
+from size_optimizer import AppSizeOptimizer
+from cache_engine import CacheEngine
 
 app = MCPServer("github-actions-codespaces-toolkit")
 
@@ -167,6 +172,44 @@ def run_autonomous_cycle(repo: str, project_path: str = ".") -> str:
     nexus = AutonomousNexusCore(repo, project_path)
     res = nexus.execute_autonomous_cycle()
     return json.dumps(res, indent=2)
+
+@app.tool()
+def inspect_security_guardians(project_path: str = ".") -> str:
+    """Inspect Android security compliance, manifest debuggable flags, and safety policies"""
+    guardian = PipelineGuardian(project_path)
+    return json.dumps(guardian.inspect_security_compliance(), indent=2)
+
+@app.tool()
+def encrypt_vault_secret(secret_text: str) -> str:
+    """Encrypt a secret or signing password using AES-256 Fernet (Kriptonik)"""
+    engine = VaultCryptoEngine()
+    encrypted = engine.encrypt_secret(secret_text)
+    return json.dumps({"encrypted_secret": encrypted}, indent=2)
+
+@app.tool()
+def save_pipeline_memory(memory_type: str, key_id: str, payload_json: str) -> str:
+    """Save pipeline state into multi-tier memory (compilation, packaging, transient)"""
+    mgr = PipelineMemoryManager()
+    data = json.loads(payload_json)
+    if memory_type == "compilation":
+        mgr.save_compilation_state(key_id, data)
+    elif memory_type == "packaging":
+        mgr.save_packaging_record(key_id, data)
+    else:
+        mgr.save_transient_cache(key_id, data)
+    return json.dumps({"status": "saved", "type": memory_type, "key": key_id})
+
+@app.tool()
+def calculate_app_size_metrics(apk_path: str) -> str:
+    """Calculate APK size, DEX count, ABI splits, and asset consumption"""
+    metrics = AppSizeOptimizer.calculate_apk_metrics(apk_path)
+    return json.dumps(metrics, indent=2)
+
+@app.tool()
+def clean_pipeline_caches(project_path: str = ".") -> str:
+    """Clean stale local Gradle caches and build directories to prevent lockups"""
+    cleaned = CacheEngine.clean_local_gradle_caches(project_path)
+    return json.dumps({"cleaned_paths": cleaned}, indent=2)
 
 async def main():
     await app.run_stdio_async()
