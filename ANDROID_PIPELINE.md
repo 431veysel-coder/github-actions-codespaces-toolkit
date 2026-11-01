@@ -87,3 +87,19 @@ Bir Android projesinin sıfırdan üretilmesi ve derlenmesi 8 kesin aşamadan ol
   * **1. Seviye (Yerel Minis PRoot):** Kodlama, paketleme, orkestrasyon, dosya yönetimi.
   * **3. Seviye (GitHub Actions):** Ağır derlemeler, APK/AAB inşası, test otomasyonu.
   * **4. Seviye (GitHub Codespaces):** İnteraktif hata ayıklama, bulut terminali.
+
+---
+
+## 6. Pipeline Script & Module Reference (`scripts/android_pipeline/`)
+
+- **`guardians.py`**: Manifest security compliance and debug flags check.
+- **`vault_crypto.py`**: AES-256 Fernet encryption and binary `.jks` keystore base64 encoding/decoding.
+- **`memory_manager.py`**: Multi-tier memory states (compilation, packaging, transient).
+- **`size_optimizer.py`**: APK size calculation, ABI splitting, and asset metrics.
+- **`cache_engine.py`**: Stale Gradle cache and build directory cleanup.
+- **`auto_fixer.py`**: Closed-loop self-healing engine (Manifest permissions, ProGuard `-keep` rules).
+- **`gitops_manager.py`**: AI-driven branch creation, PR generation, and merging.
+- **`ota_bridge.py`**: On-device OTA installation and preview bridge.
+- **`apk_profiler.py`**: DEX method count and component composition inspector.
+- **`autonomous_nexus.py`**: Cybernetic meta-controller for telemetry and end-to-end autonomous loops.
+- **`autonomous_daemon.py`**: Asynchronous background watcher daemon for automated polling and healing.
