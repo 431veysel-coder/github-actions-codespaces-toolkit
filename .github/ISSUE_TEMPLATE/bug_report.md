@@ -1,22 +1,32 @@
 ---
 name: Bug Report
-about: Create a report to help improve the toolkit
+about: Create a report to help us improve
 title: '[BUG] '
 labels: 'bug'
 assignees: ''
+
 ---
 
-**Describe the Bug**
-A clear and concise description of what the bug is.
+## Bug Açıklaması
+Ne olduğu net bir şekilde açıklayın.
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Run command '...'
-2. Trigger workflow '...'
-3. See error
+## Yeniden Üretme Adımları
+1. '...' gidin
+2. '...' tıklayın
+3. '...' kaydırın
+4. Hata görülür
 
-**Expected Behavior**
-A clear and concise description of what you expected to happen.
+## Beklenen Davranış
+Ne olması gerektiği açıklayın.
 
-**Logs & Diagnostic Output**
-If applicable, paste diagnostic output from `diagnose_run_failure` or `build_monitor.py`.
+## Ekran Görüntüleri
+Varsa ekran görüntüleri ekleyin.
+
+## Ortam
+- OS: [örn. Ubuntu 22.04 / macOS 14 / Android 14]
+- Python Version: [örn. 3.11]
+- Minis Version: [örn. 1.0.0]
+- Toolkit Version: [örn. 2.5.1]
+
+## Ek Bağlam
+Bağlam ekleyin (loglar, hata mesajları, config dosyaları).

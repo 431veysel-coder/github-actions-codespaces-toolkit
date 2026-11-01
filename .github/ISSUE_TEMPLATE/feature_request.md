@@ -1,16 +1,23 @@
 ---
 name: Feature Request
-about: Suggest an idea for this toolkit
+about: Suggest an idea for this project
 title: '[FEATURE] '
 labels: 'enhancement'
 assignees: ''
+
 ---
 
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+## Özellik Açıklaması
+Ne istediğinizi net ve özet bir şekilde açıklayın.
 
-**Describe the Solution You'd Want**
-A clear and concise description of what you want to happen.
+## Problem Bağlamı
+Bu özellik hangi sorunu çözecek? Mevcut durumda ne eksik?
 
-**Proposed MCP Tool or Script**
-If applicable, suggest how this fits into the 1-3-4 hierarchy or MCP server tools.
+## Önerilen Çözüm
+Nasıl uygulanabilir? Alternatif yaklaşımlar varsa belirtin.
+
+## Alternatifler
+Diğer çözülenebilecek yaklaşımlar.
+
+## Ek Bağlam
+Ekran görüntüleri, mockup'lar, referanslar.
