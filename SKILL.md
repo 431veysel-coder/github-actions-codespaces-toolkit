@@ -1,7 +1,7 @@
 ---
 name: github-actions-codespaces
-description: Comprehensive GitHub Actions, Codespaces, and Cloud Build Toolkit for Minis AI Agent. Provides MCP server (27 tools), CLI scripts, templates, BuilDroid semantic self-healing, Appium visual UI testing, Security ACL & HITL gates, Docker isolation, and 1-3-4 hierarchy fallback mechanisms for remote CI/CD compilation and Android APK/AAB building.
-version: 2.5.0
+description: Comprehensive GitHub Actions, Codespaces, and Cloud Build Toolkit for Minis AI Agent. Provides MCP server (30 tools), CLI scripts, templates, BuilDroid semantic self-healing, Appium visual UI testing, Security ACL & HITL gates, Docker isolation, and 1-3-4 hierarchy fallback mechanisms for remote CI/CD compilation and Android APK/AAB building. Sprint-0: changelog/SBOM/vault integrations.
+version: 2.5.1
 category: cloud-devops-automation
 ---
 
@@ -19,12 +19,14 @@ This skill provides full, industrial-grade integration with GitHub Actions (CI/C
 6. **Security ACL & HITL Gates**: Path/command scoping and Human-In-The-Loop approval (`check_security_acl`, `inspect_security_guardians`).
 7. **Vault Crypto & Memory**: Fernet AES-256 encryption, binary `.jks` base64 encoding, and multi-tier memory recording (`encrypt_vault_secret`, `encode_keystore_binary`, `save_pipeline_memory`).
 8. **Automation & Dashboard**: Project type detection, version bumping, and telemetry dashboard generation (`detect_project_architecture`, `bump_gradle_version`, `run_autonomous_cycle`, `trigger_daemon_cycle`).
+9. **Changelog & SBOM**: Automatic CHANGELOG generation (`generate_changelog`) and CycloneDX SBOM (`generate_sbom`) creation.
+10. **Enterprise Secret Resolution**: Resolve secrets from local Fernet, AWS KMS, or HashiCorp Vault (`resolve_enterprise_secret`).
 9. **Execution Hierarchy (1 - 3 - 4)**:
    - **Level 1 (Local Minis PRoot)**: Orchestration, pre-flight analysis, and setup wizard.
    - **Level 3 (GitHub Actions CI/CD)**: Heavy APK/AAB compilation, matrix builds, headless emulator UI tests, and Docker container isolation.
    - **Level 4 (GitHub Codespaces Cloud VM)**: Interactive debugging and remote terminal access.
 
-## MCP Tools Inventory (27 Active Tools)
+## MCP Tools Inventory (30 Active Tools)
 
 1. `list_workflows`, `trigger_workflow`, `list_workflow_runs`, `view_run_log`
 2. `list_codespaces`, `create_codespace`, `delete_codespace`
@@ -37,3 +39,4 @@ This skill provides full, industrial-grade integration with GitHub Actions (CI/C
 9. `encode_keystore_binary`, `trigger_daemon_cycle`
 10. `detect_project_architecture`, `bump_gradle_version`
 11. `builidroid_deep_heal`, `check_security_acl`, `translate_visual_ui_test`
+12. `generate_changelog`, `generate_sbom`, `resolve_enterprise_secret`
