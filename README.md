@@ -1,11 +1,11 @@
-# GitHub Actions & Codespaces Toolkit (Nexus OS v2.6.0)
+# GitHub Actions & Codespaces Toolkit (Nexus OS v2.7.0)
 
 [![Toolkit CI](https://github.com/431veysel-coder/github-actions-codespaces-toolkit/actions/workflows/toolkit-ci.yml/badge.svg)](https://github.com/431veysel-coder/github-actions-codespaces-toolkit/actions/workflows/toolkit-ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
-[![MCP Tools](https://img.shields.io/badge/MCP_Tools-30-brightgreen.svg)](https://github.com/431veysel-coder/github-actions-codespaces-toolkit)
+[![MCP Tools](https://img.shields.io/badge/MCP_Tools-33-brightgreen.svg)](https://github.com/431veysel-coder/github-actions-codespaces-toolkit)
 
-An industrial-grade, autonomous cloud build & orchestration toolkit designed for the **Minis AI Agent** ecosystem. It bridges resource-constrained local environments (Alpine PRoot) with high-performance remote cloud infrastructure (**GitHub Actions** and **GitHub Codespaces**) to execute heavy Android compilation, automated self-healing, secure keystore vaulting, and GitOps workflows.
+An industrial-grade, autonomous cloud build & orchestration toolkit designed for the **Minis AI Agent** ecosystem. It bridges resource-constrained local environments (Alpine PRoot) with high-performance remote cloud infrastructure (**GitHub Actions** and **GitHub Codespaces**) to execute heavy Android compilation, automated self-healing, secure keystore vaulting, and GitOps workflows — now with **Minis Nexus** isolated build integration and GitHub Actions quota optimization.
 
 ---
 
@@ -35,12 +35,13 @@ An industrial-grade, autonomous cloud build & orchestration toolkit designed for
 | 10 | **Dashboard & Versioning** | `dashboard_generator.py`, `version_bumper.py` | Telemetry dashboards, automated versionCode/versionName bumping from Git history |
 | 11 | **Cache & GitOps** | `cache_engine.py`, `gitops_manager.py` | Gradle cache cleanup, lock resolution, automated PR creation for GitOps |
 | 12 | **Build Helpers** | `build_helpers/gradle_wrapper.py`, `deps_resolver.py`, `license_checker.py`, `proguard_gen.py` | Gradle wrapper validation, multi-ecosystem dependency resolution, SPDX license compliance, ProGuard rule generation |
+| 13 | **Minis Nexus Integration** (NEW) | `nexus_builder.py`, `keystore_manager.py` | Quota-optimized isolated build, keystore lifecycle (generate/sign/verify/backup), artifact verification |
 
 ---
 
-## 📋 MCP Tools Inventory (30 Active Tools)
+## 📋 MCP Tools Inventory (33 Active Tools)
 
-The MCP server (`mcp_server/server.py`) exposes 30 typed tools for AI agent invocation:
+The MCP server (`mcp_server/server.py`) exposes 33 typed tools for AI agent invocation:
 
 ### GitHub Actions & Workflows (4)
 - `list_workflows` — List workflows for a repository
@@ -78,10 +79,19 @@ The MCP server (`mcp_server/server.py`) exposes 30 typed tools for AI agent invo
 - `save_pipeline_memory` — Multi-tier memory (compilation/packaging/transient)
 - `resolve_enterprise_secret` — Secret resolution from KMS/Vault/Local
 
-### New Sprint-0 Features (3)
+### Sprint-0 Features (3)
 - `generate_changelog` — Auto CHANGELOG.md from git commits and tags
 - `generate_sbom` — CycloneDX Software Bill of Materials JSON
 - `detect_project_architecture` — Auto-detect Native/Flutter/React Native/KMP
+
+### Minis Nexus Integration (NEW - 6)
+- `nexus_builder_preflight` — Local pre-flight checks for Nexus project
+- `nexus_builder_trigger` — Trigger Nexus Android build workflow
+- `nexus_builder_status` — Check recent Nexus build statuses
+- `nexus_keystore_generate` — Generate new Android keystore (.jks) with secure defaults
+- `nexus_keystore_sign` — Sign APK/AAB with keystore from vault
+- `nexus_artifact_verify` — Verify APK/AAB signature and integrity
+- `nexus_keystore_backup` — Encrypted backup of keystore to vault
 
 ---
 
@@ -121,6 +131,83 @@ python3 scripts/android_pipeline/changelog_automator.py v1.0.0
 python3 scripts/android_pipeline/sbom_generator.py
 ```
 
+### Minis Nexus Build Commands
+```bash
+# Pre-flight check (quota-optimized)
+python3 scripts/nexus_builder.py preflight
+
+# Trigger build (path-filtered, cached, 25min timeout)
+python3 scripts/nexus_builder.py trigger
+
+# Check build status
+python3 scripts/nexus_builder.py status
+
+# Generate keystore (RSA 2048, 10000 days validity)
+python3 scripts/android_pipeline/keystore_manager.py generate \
+  --alias minis-nexus \
+  --storepass "$STORE_PASS" \
+  --keypass "$KEY_PASS"
+
+# Sign APK/AAB
+python3 scripts/android_pipeline/keystore_manager.py sign \
+  --apk app/build/outputs/apk/release/app-release.apk \
+  --alias minis-nexus \
+  --storepass "$STORE_PASS" \
+  --keypass "$KEY_PASS"
+
+# Verify signature
+python3 scripts/android_pipeline/keystore_manager.py verify \
+  --apk app/build/outputs/apk/release/app-release-signed.apk
+
+# Backup keystore (encrypted to vault)
+python3 scripts/android_pipeline/keystore_manager.py backup \
+  --alias minis-nexus \
+  --storepass "$STORE_PASS"
+
+# List keystores
+python3 scripts/android_pipeline/keystore_manager.py list
+```
+
+### Via MCP (Minis Chat)
+```bash
+# Nexus pre-flight
+minis-mcp-cli call github-actions-codespaces-toolkit nexus_builder_preflight '{}'
+
+# Trigger Nexus build
+minis-mcp-cli call github-actions-codespaces-toolkit nexus_builder_trigger '{
+  "repo": "431veysel-coder/github-actions-codespaces-toolkit"
+}'
+
+# Check status
+minis-mcp-cli call github-actions-codespaces-toolkit nexus_builder_status '{"limit": 5}'
+
+# Generate keystore
+minis-mcp-cli call github-actions-codespaces-toolkit nexus_keystore_generate '{
+  "alias": "minis-nexus",
+  "storepass": "your-store-password",
+  "keypass": "your-key-password"
+}'
+
+# Sign APK
+minis-mcp-cli call github-actions-codespaces-toolkit nexus_keystore_sign '{
+  "apk_path": "app/build/outputs/apk/release/app-release.apk",
+  "alias": "minis-nexus",
+  "storepass": "your-store-password",
+  "keypass": "your-key-password"
+}'
+
+# Verify artifact
+minis-mcp-cli call github-actions-codespaces-toolkit nexus_artifact_verify '{
+  "apk_path": "app/build/outputs/apk/release/app-release-signed.apk"
+}'
+
+# Backup keystore
+minis-mcp-cli call github-actions-codespaces-toolkit nexus_keystore_backup '{
+  "alias": "minis-nexus",
+  "storepass": "your-store-password"
+}'
+```
+
 ### Production Android Build Workflow
 ```bash
 # 1. Copy production workflow template to your repo
@@ -140,21 +227,6 @@ minis-mcp-cli call github-actions-codespaces-toolkit trigger_workflow '{
 }'
 ```
 
-### Trigger Cloud Build via MCP
-```bash
-# Trigger Android production pipeline
-minis-mcp-cli call github-actions-codespaces-toolkit trigger_workflow '{
-  "repo": "431veysel-coder/openminis-custom",
-  "workflow": "android-production-pipeline.yml"
-}'
-
-# List recent runs
-minis-mcp-cli call github-actions-codespaces-toolkit list_workflow_runs '{
-  "repo": "431veysel-coder/openminis-custom",
-  "limit": 5
-}'
-```
-
 ---
 
 ## 📁 Project Structure
@@ -162,45 +234,31 @@ minis-mcp-cli call github-actions-codespaces-toolkit list_workflow_runs '{
 ```
 github-actions-codespaces-toolkit/
 ├── mcp_server/
-│   └── server.py                 # MCP server (30 tools)
+│   └── server.py                 # MCP server (33 tools)
 ├── scripts/
 │   ├── gh_actions.py             # GitHub Actions CLI
 │   ├── gh_codespaces.py          # Codespaces CLI
 │   ├── setup_wizard.py           # Interactive project setup
-│   └── android_pipeline/         # 25 pipeline scripts
-│       ├── apk_profiler.py
-│       ├── appium_bridge.py
-│       ├── auto_fixer.py
-│       ├── autonomous_daemon.py
-│       ├── autonomous_nexus.py
-│       ├── builidroid_fixer.py
-│       ├── cache_engine.py
-│       ├── changelog_automator.py
-│       ├── dashboard_generator.py
-│       ├── dependency_graph.py
-│       ├── gitops_manager.py
-│       ├── guardians.py
-│       ├── memory_manager.py
-│       ├── ota_bridge.py
-│       ├── pipeline_orchestrator.py
-│       ├── project_detector.py
-│       ├── sbom_generator.py
-│       ├── security_acl.py
-│       ├── size_optimizer.py
-│       ├── vault_adapter.py
-│       ├── vault_crypto.py
-│       └── version_bumper.py
-│       └── build_helpers/        # Build-time utilities
-│           ├── gradle_wrapper.py
-│           ├── deps_resolver.py
-│           ├── license_checker.py
-│           └── proguard_gen.py
+│   ├── nexus_builder.py          # Minis Nexus CLI (preflight, trigger, status)
+│   └── android_pipeline/         # 25+ pipeline scripts
+│       ├── keystore_manager.py   # Generate, sign, verify, backup keystores
+│       ├── auto_fixer.py         # Granular circuit breaker (persistent state)
+│       ├── security_utils.py     # Secret masking + audit logging + allowlist
+│       ├── config.py             # YAML + env overrides + XDG + validation
+│       ├── sbom_generator.py     # CycloneDX 1.4 SBOM generator
+│       ├── changelog_automator.py # Keep a Changelog + Conventional Commits
+│       ├── build_helpers/        # Gradle wrapper, deps resolver, license, proguard
+│       └── ... (20+ other scripts)
+├── apps/minis-nexus/             # Minis Nexus isolated Android project
+│   ├── gradle.properties         # JVM tuning, caching, parallel execution
+│   └── NEXUS_ULTRA_BLUEPRINT.md # Architecture blueprint v3.0
 ├── templates/
 │   └── .github/workflows/
 │       ├── android-build.yml       # Simple template (legacy)
-│       └── android-production-pipeline.yml  # Production template
-├── tests/
-│   ├── test_suite.py             # 26 tests (unit + integration)
+│       ├── android-production-pipeline.yml  # Production template
+│       └── nexus-android-build.yml  # Nexus quota-optimized workflow
+├── tests/                        # 26 passing tests (unit + integration + security)
+│   ├── test_suite.py             # Main test suite
 │   ├── test_auto_fixer.py
 │   ├── test_size_optimizer.py
 │   ├── contracts/
@@ -221,7 +279,7 @@ github-actions-codespaces-toolkit/
 ├── SECURITY.md
 ├── LICENSE
 ├── Dockerfile
-└── CHANGELOG.md                  # Auto-generated
+└── CHANGELOG.md                  # Auto-generated (Keep a Changelog)
 ```
 
 ---
@@ -231,9 +289,12 @@ github-actions-codespaces-toolkit/
 ### Environment Variables
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `GITHUB_TOKEN` | Yes | GitHub Personal Access Token (scopes: `repo`, `workflow`, `codespace`, `admin:repo_hook`) |
+| `GITHUB_TOKEN` | Yes | GitHub PAT (scopes: `repo`, `workflow`, `codespace`, `admin:repo_hook`) |
 | `ANDROID_SDK_ROOT` | No | Android SDK path (default: `/opt/android-sdk`) |
 | `GRADLE_USER_HOME` | No | Gradle cache directory |
+| `VAULT_BACKEND` | No | Secret backend: `local`, `aws_kms`, `hashicorp_vault` |
+| `VAULT_TOKEN` | No | HashiCorp Vault token |
+| `AWS_KMS_KEY_ID` | No | AWS KMS key ID for encryption |
 
 ### MCP Server Config (Minis)
 ```json

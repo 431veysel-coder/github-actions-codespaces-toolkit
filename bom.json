@@ -1,10 +1,10 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.4",
-  "serialNumber": "urn:uuid:aaa45359dac886cb440d0e109e207bd7",
+  "serialNumber": "urn:uuid:0599d829ca5aeeb8b49577b3e7d495e3",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-11-02T13:03:54Z",
+    "timestamp": "2026-11-02T19:30:01Z",
     "tools": [
       {
         "vendor": "Nexus OS",

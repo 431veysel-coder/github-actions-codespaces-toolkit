@@ -36,6 +36,7 @@ from appium_bridge import AppiumUIBridge
 from changelog_automator import ChangelogAutomator
 from sbom_generator import SBOMGenerator
 from vault_adapter import EnterpriseVaultManager
+from keystore_manager import KeystoreManager
 
 # Import security utilities
 from security_utils import (
@@ -519,6 +520,205 @@ def resolve_enterprise_secret(secret_name: str, backend: str = "local") -> str:
         # Never return full secret in response
         preview = (val[:4] + "***") if val else "not_found"
         return json.dumps(create_success_response({"secret_name": secret_name, "resolved": bool(val), "preview": preview}))
+    except SecurityError as e:
+        return json.dumps(create_error_response(e.code, e.message, e.remediation))
+
+# ============================================================================
+# MINIS NEXUS INTEGRATION TOOLS
+# ============================================================================
+
+@app.tool()
+def nexus_builder_preflight(project_path: str = "apps/minis-nexus") -> str:
+    """Run local pre-flight checks for Minis Nexus Android project"""
+    try:
+        project_path = str(validate_file_path(project_path, must_exist=True))
+        
+        # Check required files
+        required_files = [
+            "gradle.properties",
+            "gradlew",
+            "build.gradle",
+            "app/build.gradle"
+        ]
+        
+        missing = []
+        for f in required_files:
+            if not os.path.exists(os.path.join(project_path, f)):
+                missing.append(f)
+        
+        if missing:
+            return json.dumps(create_error_response(
+                "PREFLIGHT_FAILED",
+                f"Missing required files: {', '.join(missing)}",
+                "Ensure Minis Nexus project is properly initialized"
+            ))
+        
+        # Validate gradle.properties has quota optimizations
+        gradle_props = os.path.join(project_path, "gradle.properties")
+        with open(gradle_props, "r") as f:
+            props_content = f.read()
+        
+        optimizations = {
+            "org.gradle.parallel": "true",
+            "org.gradle.caching": "true",
+            "org.gradle.configuration-cache": "true",
+            "org.gradle.jvmargs": "-Xmx3g"
+        }
+        
+        missing_opts = []
+        for opt, expected in optimizations.items():
+            if opt not in props_content or expected not in props_content:
+                missing_opts.append(f"{opt}={expected}")
+        
+        return json.dumps(create_success_response({
+            "status": "ready" if not missing_opts else "warnings",
+            "project_path": project_path,
+            "missing_optimizations": missing_opts,
+            "message": "Pre-flight checks passed" if not missing_opts else "Pre-flight passed with warnings"
+        }))
+    except SecurityError as e:
+        return json.dumps(create_error_response(e.code, e.message, e.remediation))
+
+@app.tool()
+def nexus_builder_trigger(repo: str = "431veysel-coder/github-actions-codespaces-toolkit", workflow: str = "nexus-android-build.yml", ref: str = "main") -> str:
+    """Trigger Minis Nexus Android build workflow (quota-optimized)"""
+    try:
+        repo = validate_github_repo(repo)
+        workflow = validate_workflow_name(workflow)
+        ref = validate_branch_name(ref) if ref else "main"
+        
+        cmd = ["gh", "workflow", "run", workflow, "--repo", repo, "--ref", ref]
+        result = safe_run(cmd, check=True)
+        
+        return json.dumps(create_success_response({
+            "triggered": True,
+            "repo": repo,
+            "workflow": workflow,
+            "ref": ref,
+            "message": "Nexus build workflow triggered successfully"
+        }))
+    except SecurityError as e:
+        return json.dumps(create_error_response(e.code, e.message, e.remediation))
+
+@app.tool()
+def nexus_builder_status(repo: str = "431veysel-coder/github-actions-codespaces-toolkit", limit: int = 5) -> str:
+    """Check recent Minis Nexus build statuses"""
+    try:
+        repo = validate_github_repo(repo)
+        if limit < 1 or limit > 20:
+            limit = 5
+        
+        cmd = ["gh", "run", "list", "--repo", repo, "--workflow", "nexus-android-build.yml", "--limit", str(limit), "--json", "databaseId,name,status,conclusion,createdAt,headBranch"]
+        result = safe_run(cmd, check=True)
+        runs = json.loads(result.stdout)
+        
+        return json.dumps(create_success_response({
+            "repo": repo,
+            "workflow": "nexus-android-build.yml",
+            "runs": runs
+        }))
+    except SecurityError as e:
+        return json.dumps(create_error_response(e.code, e.message, e.remediation))
+
+@app.tool()
+def nexus_keystore_generate(
+    alias: str,
+    storepass: str,
+    keypass: str,
+    dname: str = "CN=Minis Nexus, OU=Engineering, O=Minis, L=Istanbul, ST=Istanbul, C=TR",
+    validity: int = 10000,
+    keysize: int = 2048,
+    key_alg: str = "RSA"
+) -> str:
+    """Generate new Android keystore for Minis Nexus"""
+    try:
+        if not alias or not isinstance(alias, str):
+            raise ValidationError("INVALID_ALIAS", "Alias must be a non-empty string")
+        if len(storepass) < 8:
+            raise ValidationError("WEAK_PASSWORD", "Store password must be at least 8 characters")
+        if len(keypass) < 8:
+            raise ValidationError("WEAK_PASSWORD", "Key password must be at least 8 characters")
+        
+        manager = KeystoreManager()
+        success, msg = manager.generate_keystore(
+            alias=alias,
+            storepass=storepass,
+            keypass=keypass,
+            dname=dname,
+            validity=validity,
+            keysize=keysize,
+            key_alg=key_alg
+        )
+        return msg
+    except SecurityError as e:
+        return json.dumps(create_error_response(e.code, e.message, e.remediation))
+
+@app.tool()
+def nexus_keystore_sign(
+    apk_path: str,
+    alias: str,
+    storepass: str,
+    keypass: str,
+    keystore_path: str = "",
+    sig_alg: str = "SHA256withRSA"
+) -> str:
+    """Sign APK/AAB with Minis Nexus keystore"""
+    try:
+        apk_path = str(validate_file_path(apk_path, must_exist=True))
+        if not alias:
+            raise ValidationError("INVALID_ALIAS", "Alias must be provided")
+        if len(storepass) < 8 or len(keypass) < 8:
+            raise ValidationError("WEAK_PASSWORD", "Passwords must be at least 8 characters")
+        
+        manager = KeystoreManager()
+        success, msg = manager.sign_apk(
+            apk_path=apk_path,
+            alias=alias,
+            storepass=storepass,
+            keypass=keypass,
+            keystore_path=keystore_path if keystore_path else None,
+            sig_alg=sig_alg
+        )
+        return msg
+    except SecurityError as e:
+        return json.dumps(create_error_response(e.code, e.message, e.remediation))
+
+@app.tool()
+def nexus_artifact_verify(apk_path: str, keystore_path: str = "", alias: str = "", storepass: str = "") -> str:
+    """Verify APK/AAB signature and integrity"""
+    try:
+        apk_path = str(validate_file_path(apk_path, must_exist=True))
+        
+        manager = KeystoreManager()
+        success, msg = manager.verify_signature(
+            apk_path=apk_path,
+            keystore_path=keystore_path if keystore_path else None,
+            alias=alias if alias else None,
+            storepass=storepass if storepass else None
+        )
+        
+        if isinstance(msg, dict):
+            msg = json.dumps(msg, indent=2)
+        return msg
+    except SecurityError as e:
+        return json.dumps(create_error_response(e.code, e.message, e.remediation))
+
+@app.tool()
+def nexus_keystore_backup(alias: str, storepass: str, encrypt: bool = True) -> str:
+    """Create encrypted backup of keystore to vault"""
+    try:
+        if not alias:
+            raise ValidationError("INVALID_ALIAS", "Alias must be provided")
+        if len(storepass) < 8:
+            raise ValidationError("WEAK_PASSWORD", "Store password must be at least 8 characters")
+        
+        manager = KeystoreManager()
+        success, msg = manager.backup_keystore(
+            alias=alias,
+            storepass=storepass,
+            encrypt=encrypt
+        )
+        return msg
     except SecurityError as e:
         return json.dumps(create_error_response(e.code, e.message, e.remediation))
 
