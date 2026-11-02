@@ -1,4 +1,4 @@
-# GitHub Actions & Codespaces Toolkit (Nexus OS v2.5.1)
+# GitHub Actions & Codespaces Toolkit (Nexus OS v2.6.0)
 
 [![Toolkit CI](https://github.com/431veysel-coder/github-actions-codespaces-toolkit/actions/workflows/toolkit-ci.yml/badge.svg)](https://github.com/431veysel-coder/github-actions-codespaces-toolkit/actions/workflows/toolkit-ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -23,17 +23,18 @@ An industrial-grade, autonomous cloud build & orchestration toolkit designed for
 
 | # | Module | Scripts | Key Features |
 |---|--------|---------|--------------|
-| 1 | **Autonomous Self-Healing** | `auto_fixer.py`, `builidroid_fixer.py` | Diagnoses build failures (SDK licenses, missing permissions, ProGuard `-keep`, AAPT2, Kotlinc, D8/R8) and automatically applies patches, commits, and pushes fixes |
-| 2 | **Security & Vault Crypto** | `vault_crypto.py`, `vault_adapter.py` | AES-256 Fernet encryption, binary `.jks` keystore base64 encoding, enterprise KMS (AWS KMS, HashiCorp Vault) integration |
+| 1 | **Autonomous Self-Healing** | `auto_fixer.py`, `builidroid_fixer.py` | Diagnoses build failures (SDK licenses, missing permissions, ProGuard `-keep`, AAPT2, Kotlinc, D8/R8) and automatically applies patches, commits, and pushes fixes. **Circuit breaker** (max 3 attempts per error fingerprint) prevents infinite loops. |
+| 2 | **Security & Vault Crypto** | `vault_crypto.py`, `vault_adapter.py` | AES-256 Fernet encryption, binary `.jks` keystore base64 encoding, enterprise KMS (AWS KMS, HashiCorp Vault) integration. **Audit logging** for all secret access. |
 | 3 | **App Size Profiler & Optimizer** | `apk_profiler.py`, `size_optimizer.py` | Inspects APK size, DEX method counts, ABI splits, asset consumption, AAB bundle generation |
 | 4 | **Pre-flight Dependency Analyzer** | `dependency_graph.py`, `project_detector.py` | Validates Gradle wrappers, Android Manifest permissions, SDK compliance, detects project type (Native, Flutter, React Native, KMP) |
-| 5 | **Multi-Tier Memory Manager** | `memory_manager.py` | Segregates persistent records, transient session state, compilation telemetry, packaging registries |
+| 5 | **Multi-Tier Memory Manager** | `memory_manager.py`, `sqlite_memory_manager.py` | SQLite-backed persistent memory with WAL mode, concurrent access safety, TTL-based cleanup |
 | 6 | **Background Daemon** | `autonomous_daemon.py`, `autonomous_nexus.py` | Asynchronously monitors workflow runs and triggers automated recovery loops |
-| 7 | **Security Guardians** | `guardians.py`, `security_acl.py` | Manifest debuggable flags, `allowBackup` checks, HITL (Human-In-The-Loop) approval gates |
+| 7 | **Security Guardians** | `guardians.py`, `security_acl.py` | Manifest debuggable flags, `allowBackup` checks, HITL (Human-In-The-Loop) approval gates. **Allowlist-based command validation** |
 | 8 | **Visual UI Testing** | `appium_bridge.py` | Translate natural language prompts into Appium WebDriver automation actions |
-| 9 | **Changelog & SBOM** | `changelog_automator.py`, `sbom_generator.py` | Auto-generate CHANGELOG.md from git history, CycloneDX SBOM compliance reports |
+| 9 | **Changelog & SBOM** | `changelog_automator.py`, `sbom_generator.py` | Auto-generate CHANGELOG.md from git history (Conventional Commits), CycloneDX 1.4 SBOM compliance reports |
 | 10 | **Dashboard & Versioning** | `dashboard_generator.py`, `version_bumper.py` | Telemetry dashboards, automated versionCode/versionName bumping from Git history |
 | 11 | **Cache & GitOps** | `cache_engine.py`, `gitops_manager.py` | Gradle cache cleanup, lock resolution, automated PR creation for GitOps |
+| 12 | **Build Helpers** | `build_helpers/gradle_wrapper.py`, `deps_resolver.py`, `license_checker.py`, `proguard_gen.py` | Gradle wrapper validation, multi-ecosystem dependency resolution, SPDX license compliance, ProGuard rule generation |
 
 ---
 
@@ -120,6 +121,25 @@ python3 scripts/android_pipeline/changelog_automator.py v1.0.0
 python3 scripts/android_pipeline/sbom_generator.py
 ```
 
+### Production Android Build Workflow
+```bash
+# 1. Copy production workflow template to your repo
+cp templates/.github/workflows/android-production-pipeline.yml \
+   /path/to/your/repo/.github/workflows/
+
+# 2. Configure GitHub Secrets:
+#    - KEYSTORE_BASE64 (base64 encoded .jks)
+#    - KEYSTORE_PASSWORD
+#    - KEY_ALIAS
+#    - KEY_PASSWORD
+
+# 3. Trigger via MCP
+minis-mcp-cli call github-actions-codespaces-toolkit trigger_workflow '{
+  "repo": "your-org/your-repo",
+  "workflow": "android-production-pipeline.yml"
+}'
+```
+
 ### Trigger Cloud Build via MCP
 ```bash
 # Trigger Android production pipeline
@@ -147,7 +167,7 @@ github-actions-codespaces-toolkit/
 │   ├── gh_actions.py             # GitHub Actions CLI
 │   ├── gh_codespaces.py          # Codespaces CLI
 │   ├── setup_wizard.py           # Interactive project setup
-│   └── android_pipeline/         # 22 pipeline scripts
+│   └── android_pipeline/         # 25 pipeline scripts
 │       ├── apk_profiler.py
 │       ├── appium_bridge.py
 │       ├── auto_fixer.py
@@ -170,12 +190,25 @@ github-actions-codespaces-toolkit/
 │       ├── vault_adapter.py
 │       ├── vault_crypto.py
 │       └── version_bumper.py
+│       └── build_helpers/        # Build-time utilities
+│           ├── gradle_wrapper.py
+│           ├── deps_resolver.py
+│           ├── license_checker.py
+│           └── proguard_gen.py
 ├── templates/
-│   └── gradle.properties         # Performance-optimized Gradle config
+│   └── .github/workflows/
+│       ├── android-build.yml       # Simple template (legacy)
+│       └── android-production-pipeline.yml  # Production template
 ├── tests/
-│   ├── test_suite.py             # 9 unit tests
+│   ├── test_suite.py             # 26 tests (unit + integration)
 │   ├── test_auto_fixer.py
-│   └── test_size_optimizer.py
+│   ├── test_size_optimizer.py
+│   ├── contracts/
+│   │   └── test_mcp_contracts.py
+│   ├── integration/
+│   │   └── test_integration.py
+│   └── security/
+│       └── test_security.py
 ├── .github/
 │   ├── ISSUE_TEMPLATE/
 │   │   ├── bug_report.md

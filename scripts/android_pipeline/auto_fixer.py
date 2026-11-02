@@ -8,6 +8,7 @@ Uses centralized security utilities for input validation and safe execution.
 
 import os
 import json
+import hashlib
 from typing import List, Optional, Tuple
 from security_utils import (
     safe_git_command,
@@ -23,12 +24,28 @@ class AutoFixEngine:
         # Validate and resolve project path
         self.project_path = str(validate_file_path(project_path, must_exist=True))
         self.app_dir = os.path.join(self.project_path, "app")
-        self.state_file = os.path.join(self.project_path, ".gradle/autofix_state.json")
+        # Use persistent state file in workspace (survives CI/CD runs)
+        self.state_file = os.path.join("/var/minis/workspace", f"autofix_state_{hashlib.sha256(self.project_path.encode()).hexdigest()[:16]}.json")
 
-    def _check_circuit_breaker(self, error_type: str) -> bool:
-        """Returns True if repair is allowed, False if circuit breaker tripped (max 3 attempts)"""
+    def _compute_error_fingerprint(self, error_type: str, file_hint: Optional[str] = None, error_log: Optional[str] = None) -> str:
+        """Compute a granular fingerprint for the error (type + file + error signature)"""
+        parts = [error_type]
+        if file_hint:
+            parts.append(file_hint)
+        if error_log:
+            # Extract first error line as signature
+            for line in error_log.splitlines():
+                if "error:" in line.lower() or "exception" in line.lower() or "fail" in line.lower():
+                    parts.append(line.strip()[:100])
+                    break
+        fingerprint = "|".join(parts)
+        return hashlib.sha256(fingerprint.encode()).hexdigest()[:16]
+
+    def _check_circuit_breaker(self, error_type: str, file_hint: Optional[str] = None, error_log: Optional[str] = None) -> bool:
+        """Returns True if repair is allowed, False if circuit breaker tripped (max 3 attempts per error fingerprint)"""
         # Validate error type
         error_type = validate_error_type(error_type)
+        fingerprint = self._compute_error_fingerprint(error_type, file_hint, error_log)
         
         state = {}
         if os.path.exists(self.state_file):
@@ -38,12 +55,12 @@ class AutoFixEngine:
             except Exception:
                 pass
 
-        attempts = state.get(error_type, 0)
+        attempts = state.get(fingerprint, 0)
         if attempts >= 3:
-            print(f"[!] CIRCUIT BREAKER TRIPPED: Error type '{error_type}' has failed {attempts} consecutive times. Stopping autonomous repair to prevent infinite loops.")
+            print(f"[!] CIRCUIT BREAKER TRIPPED: Error fingerprint '{fingerprint}' (type: {error_type}) has failed {attempts} consecutive times. Stopping autonomous repair to prevent infinite loops.")
             return False
 
-        state[error_type] = attempts + 1
+        state[fingerprint] = attempts + 1
         os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
         with open(self.state_file, "w", encoding="utf-8") as f:
             json.dump(state, f)
@@ -54,7 +71,7 @@ class AutoFixEngine:
         # Validate error type
         error_type = validate_error_type(error_type)
         
-        if not self._check_circuit_breaker(error_type):
+        if not self._check_circuit_breaker(error_type, file_hint, error_log):
             return [f"Circuit breaker tripped for {error_type}. Manual intervention required."]
 
         fixes_applied = []

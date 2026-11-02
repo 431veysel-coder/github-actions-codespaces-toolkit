@@ -6,6 +6,7 @@ Validates input/output schemas for all 30 MCP tools
 
 import json
 import pytest
+from pathlib import Path
 from typing import Dict, Any
 
 
@@ -227,12 +228,12 @@ class TestErrorResponseFormat:
         import server
         
         app = server.app
-        tools = await app.list_tools()
-        list_workflows = next(t for t in tools if t.name == "list_workflows")
         
-        # Invoke with invalid repo
-        result = await list_workflows.fn(repo="invalid-format")
-        data = json.loads(result)
+        # Invoke with invalid repo via call_tool
+        result = await app.call_tool("list_workflows", {"repo": "invalid-format"})
+        # result is CallToolResult with content list
+        content_text = result.content[0].text if result.content else "{}"
+        data = json.loads(content_text)
         
         assert "error" in data, "Should return error for invalid repo"
         assert "code" in data["error"]
@@ -245,17 +246,21 @@ class TestErrorResponseFormat:
         import sys
         sys.path.insert(0, str(Path(__file__).parent.parent.parent / "mcp_server"))
         import server
+        from mcp.server.mcpserver.exceptions import ToolError
         
         app = server.app
-        tools = await app.list_tools()
-        trigger_workflow = next(t for t in tools if t.name == "trigger_workflow")
         
-        # Invoke without required workflow param
-        result = await trigger_workflow.fn(repo="owner/repo")
-        data = json.loads(result)
-        
-        assert "error" in data, "Should return error for missing workflow"
-        assert data["error"]["code"] in ("INVALID_WORKFLOW", "VALIDATION_ERROR")
+        # Invoke without required workflow param - should raise ToolError
+        try:
+            result = await app.call_tool("trigger_workflow", {"repo": "owner/repo"})
+            # If it doesn't raise, check the result
+            content_text = result.content[0].text if result.content else "{}"
+            data = json.loads(content_text)
+            assert "error" in data, "Should return error for missing workflow"
+            assert data["error"]["code"] in ("INVALID_WORKFLOW", "VALIDATION_ERROR")
+        except ToolError as e:
+            # ToolError is expected for validation errors
+            assert "workflow" in str(e).lower() or "required" in str(e).lower()
 
 
 if __name__ == "__main__":

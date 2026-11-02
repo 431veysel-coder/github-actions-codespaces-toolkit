@@ -10,6 +10,7 @@ import json
 import subprocess
 import shlex
 import tempfile
+import logging
 from pathlib import Path
 from typing import Optional, List, Tuple, Any, Dict
 from functools import wraps
@@ -280,12 +281,14 @@ def safe_run(
     - Returns CompletedProcess
     """
     if not isinstance(cmd, list) or not cmd:
+        audit_command_execution(cmd, cwd or ".", False, "Empty command")
         raise CommandInjectionError("INVALID_COMMAND", "Command must be a non-empty list")
     
     # Validate command against blocked patterns
     cmd_str = " ".join(shlex.quote(arg) for arg in cmd)
     for pattern in BLOCKED_COMMAND_PATTERNS:
         if re.search(pattern, cmd_str, re.IGNORECASE):
+            audit_command_execution(cmd, cwd or ".", False, f"Blocked pattern: {pattern}")
             raise CommandInjectionError(
                 "BLOCKED_COMMAND",
                 f"Command matches blocked pattern: '{pattern}'",
@@ -308,10 +311,13 @@ def safe_run(
             check=check,
             env={**os.environ, **(env or {})}
         )
+        audit_command_execution(cmd, cwd or ".", True)
         return result
     except subprocess.TimeoutExpired:
+        audit_command_execution(cmd, cwd or ".", False, f"Timeout after {timeout}s")
         raise SecurityError("COMMAND_TIMEOUT", f"Command timed out after {timeout}s")
     except subprocess.CalledProcessError as e:
+        audit_command_execution(cmd, cwd or ".", False, e.stderr or e.stdout or "Unknown error")
         if check:
             raise SecurityError("COMMAND_FAILED", f"Command failed: {e.stderr or e.stdout}")
         raise
@@ -324,10 +330,12 @@ def safe_git_command(args: List[str], cwd: str) -> subprocess.CompletedProcess:
         "branch", "checkout", "merge", "rebase", "tag", "remote", "config"
     }
     if args and args[0] not in allowed_subcommands:
+        audit_command_execution(["git"] + args, cwd, False, f"Subcommand not allowed: {args[0]}")
         raise CommandInjectionError("BLOCKED_GIT_COMMAND", f"Git subcommand not allowed: '{args[0]}'")
     
     # For push, prevent --force
     if args[0] == "push" and "--force" in args:
+        audit_command_execution(["git"] + args, cwd, False, "Force push not allowed")
         raise CommandInjectionError("BLOCKED_GIT_FORCE_PUSH", "Force push is not allowed")
     
     return safe_run(["git"] + args, cwd=cwd)
@@ -337,10 +345,29 @@ def safe_git_command(args: List[str], cwd: str) -> subprocess.CompletedProcess:
 # ============================================================================
 
 SECRET_PATTERNS = [
+    # Key=value patterns
     (re.compile(r"(?i)(password|secret|token|key|auth)(\s*[:=]\s*)([^\s]+)"), r"\1\2***MASKED***"),
-    (re.compile(r"(?i)(github_token|gh_token|pat)(\s*[:=]\s*)([^\s]+)"), r"\1\2***MASKED***"),
-    (re.compile(r"(?i)(aws_access_key_id|aws_secret_access_key)(\s*[:=]\s*)([^\s]+)"), r"\1\2***MASKED***"),
-    (re.compile(r"([A-Za-z0-9+/]{40,}={0,2})"), "***BASE64_SECRET***"),  # Base64 secrets
+    (re.compile(r"(?i)(github_token|gh_token|pat|bearer)(\s*[:=]\s*)([^\s]+)"), r"\1\2***MASKED***"),
+    (re.compile(r"(?i)(aws_access_key_id|aws_secret_access_key|aws_session_token)(\s*[:=]\s*)([^\s]+)"), r"\1\2***MASKED***"),
+    (re.compile(r"(?i)(api[_-]?key|apikey|client[_-]?secret|private[_-]?key)(\s*[:=]\s*)([^\s]+)"), r"\1\2***MASKED***"),
+    
+    # JWT tokens (eyJ...)
+    (re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"), "***JWT_TOKEN***"),
+    
+    # GitHub tokens (ghp_, gho_, ghu_, ghs_, ghr_)
+    (re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"), "***GITHUB_TOKEN***"),
+    
+    # Generic long base64-like strings (potential secrets)
+    (re.compile(r"([A-Za-z0-9+/]{40,}={0,2})"), "***BASE64_SECRET***"),
+    
+    # AWS keys (AKIA...)
+    (re.compile(r"AKIA[0-9A-Z]{16}"), "***AWS_ACCESS_KEY***"),
+    
+    # Private keys (-----BEGIN ... PRIVATE KEY-----)
+    (re.compile(r"-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+PRIVATE KEY-----"), "***PRIVATE_KEY***"),
+    
+    # Connection strings with passwords
+    (re.compile(r"(?i)(mongodb|postgres|mysql|redis)://[^:]+:([^@]+)@"), r"\1://***:***@"),
 ]
 
 def mask_secrets(text: str) -> str:
@@ -355,7 +382,20 @@ def mask_secrets(text: str) -> str:
 def mask_secrets_in_dict(data: Any) -> Any:
     """Recursively mask secrets in dict/list structures"""
     if isinstance(data, dict):
-        return {k: mask_secrets_in_dict(v) for k, v in data.items()}
+        masked = {}
+        for k, v in data.items():
+            # Check if key name suggests a secret (more specific patterns)
+            key_lower = k.lower()
+            is_secret_key = any(keyword in key_lower for keyword in [
+                "password", "secret", "token", "auth", "credential", 
+                "api_key", "apikey", "access_key", "private_key"
+            ])
+            masked_v = mask_secrets_in_dict(v)
+            # If key suggests secret and value is string, mask it
+            if is_secret_key and isinstance(masked_v, str) and masked_v:
+                masked_v = "***MASKED***"
+            masked[k] = masked_v
+        return masked
     elif isinstance(data, list):
         return [mask_secrets_in_dict(item) for item in data]
     elif isinstance(data, str):
@@ -388,6 +428,82 @@ def create_success_response(data: Any = None, meta: Dict = None) -> Dict:
     if meta:
         response["meta"] = meta
     return response
+
+# ============================================================================
+# AUDIT LOGGING
+# ============================================================================
+
+AUDIT_LOGGER = logging.getLogger("security.audit")
+AUDIT_LOGGER.setLevel(logging.INFO)
+
+def _get_audit_handler():
+    """Get or create audit log handler"""
+    log_dir = Path("/var/minis/workspace/logs")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    handler = logging.FileHandler(log_dir / "security_audit.log", encoding="utf-8")
+    handler.setFormatter(logging.Formatter(
+        '{"timestamp": "%(asctime)s", "level": "%(levelname)s", "event": "%(message)s"}',
+        datefmt="%Y-%m-%dT%H:%M:%S"
+    ))
+    return handler
+
+# Add handler if not already added
+if not AUDIT_LOGGER.handlers:
+    AUDIT_LOGGER.addHandler(_get_audit_handler())
+    AUDIT_LOGGER.propagate = False
+
+
+def audit_log(event_type: str, details: Dict[str, Any], success: bool = True) -> None:
+    """Log security-relevant events for audit trail"""
+    import uuid
+    correlation_id = str(uuid.uuid4())[:8]
+    
+    audit_entry = {
+        "event_type": event_type,
+        "success": success,
+        "correlation_id": correlation_id,
+        "details": mask_secrets_in_dict(details),
+    }
+    
+    AUDIT_LOGGER.info(json.dumps(audit_entry, ensure_ascii=False))
+
+
+def audit_command_execution(cmd: List[str], cwd: str, success: bool, error: str = "") -> None:
+    """Audit command execution"""
+    audit_log("command_execution", {
+        "command": " ".join(shlex.quote(arg) for arg in cmd),
+        "cwd": cwd,
+        "success": success,
+        "error": error[:500] if error else "",
+    }, success=success)
+
+
+def audit_file_access(path: str, operation: str, success: bool, reason: str = "") -> None:
+    """Audit file access (read/write/delete)"""
+    audit_log("file_access", {
+        "path": path,
+        "operation": operation,
+        "success": success,
+        "reason": reason,
+    }, success=success)
+
+
+def audit_auth_attempt(repo: str, operation: str, success: bool) -> None:
+    """Audit GitHub authentication/authorization attempts"""
+    audit_log("auth_attempt", {
+        "repo": repo,
+        "operation": operation,
+        "success": success,
+    }, success=success)
+
+
+def audit_secret_access(secret_name: str, backend: str, success: bool) -> None:
+    """Audit secret access from vault"""
+    audit_log("secret_access", {
+        "secret_name": secret_name,
+        "backend": backend,
+        "success": success,
+    }, success=success)
 
 # ============================================================================
 # DECORATORS FOR MCP TOOLS

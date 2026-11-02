@@ -55,7 +55,14 @@ from security_utils import (
     create_success_response,
     SecurityError,
     ValidationError,
+    audit_command_execution,
+    audit_auth_attempt,
 )
+
+# Rate limiting for GitHub API
+_gh_api_call_times = []
+_GH_API_RATE_LIMIT = 4500  # per hour (leave buffer from 5000)
+_GH_API_WINDOW = 3600  # 1 hour in seconds
 
 app = MCPServer("github-actions-codespaces-toolkit")
 
@@ -63,14 +70,42 @@ app = MCPServer("github-actions-codespaces-toolkit")
 # HELPER FUNCTIONS
 # ============================================================================
 
+import time
+
+def _check_rate_limit() -> bool:
+    """Check if we're within GitHub API rate limits"""
+    global _gh_api_call_times
+    now = time.time()
+    # Remove calls older than window
+    _gh_api_call_times = [t for t in _gh_api_call_times if now - t < _GH_API_WINDOW]
+    if len(_gh_api_call_times) >= _GH_API_RATE_LIMIT:
+        return False
+    _gh_api_call_times.append(now)
+    return True
+
 def _gh_run(cmd: list, repo: str = None) -> str:
-    """Execute gh command with validation and error handling"""
+    """Execute gh command with validation, rate limiting, and error handling"""
+    # Check rate limit
+    if not _check_rate_limit():
+        return json.dumps(create_error_response(
+            "RATE_LIMITED",
+            "GitHub API rate limit approached. Please wait before making more requests.",
+            "Wait a few minutes before retrying, or check GitHub API rate limit status with 'gh api rate_limit'"
+        ))
+    
     try:
         result = safe_run(cmd, check=True)
+        # Audit successful auth attempt
+        if repo:
+            audit_auth_attempt(repo, cmd[1] if len(cmd) > 1 else "unknown", True)
         return result.stdout
     except SecurityError as e:
+        if repo:
+            audit_auth_attempt(repo, cmd[1] if len(cmd) > 1 else "unknown", False)
         return json.dumps(create_error_response(e.code, e.message, e.remediation))
     except Exception as e:
+        if repo:
+            audit_auth_attempt(repo, cmd[1] if len(cmd) > 1 else "unknown", False)
         return json.dumps(create_error_response("COMMAND_FAILED", str(e)))
 
 # ============================================================================
