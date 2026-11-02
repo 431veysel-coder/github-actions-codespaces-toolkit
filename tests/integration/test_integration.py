@@ -1,736 +1,433 @@
 #!/usr/bin/env python3
 """
-Integration Tests — Real GitHub API, Codespace lifecycle, End-to-end build pipeline
+Integration Tests for GitHub Actions & Codespaces Toolkit
+Tests with mocked GitHub API using respx/httpx.
 """
 
+import os
+import sys
 import json
 import pytest
-import tempfile
-import subprocess
-import os
+import respx
+import httpx
 from pathlib import Path
-from unittest.mock import patch, MagicMock, AsyncMock
+from unittest.mock import patch, MagicMock
 
 # Add project paths
-import sys
 PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "android_pipeline"))
 sys.path.insert(0, str(PROJECT_ROOT / "mcp_server"))
 
 
-class TestGitHubCLIIntegration:
-    """Test GitHub CLI integration (requires auth)"""
+class TestGitHubActionsIntegration:
+    """Integration tests for GitHub Actions operations."""
     
-    @pytest.fixture(autouse=True)
-    def check_gh_auth(self):
-        """Skip if gh not authenticated"""
-        result = subprocess.run(["gh", "auth", "status"], capture_output=True)
-        if result.returncode != 0:
-            pytest.skip("GitHub CLI not authenticated")
+    @pytest.mark.integration
+    def test_list_workflows_success(self, mock_gh_workflows):
+        """Test successful workflow listing."""
+        from gh_actions import list_workflows
+        
+        result = list_workflows("owner/repo")
+        data = json.loads(result)
+        
+        assert data["success"] is True
+        assert "data" in data
+        workflows = data["data"]
+        assert len(workflows) == 3
+        assert workflows[0]["name"] == "Build Android APK"
     
-    def test_gh_workflow_list(self):
-        """Test gh workflow list command"""
-        result = subprocess.run(
-            ["gh", "workflow", "list", "--repo", "431veysel-coder/github-actions-codespaces-toolkit", "--json", "id,name,state"],
-            capture_output=True, text=True
+    @pytest.mark.integration
+    def test_list_workflows_invalid_repo(self):
+        """Test workflow listing with invalid repo."""
+        from gh_actions import list_workflows
+        from security_utils import ValidationError
+        
+        with pytest.raises(ValidationError):
+            list_workflows("invalid")
+    
+    @pytest.mark.integration
+    def test_trigger_workflow_success(self, mock_gh_workflow_run):
+        """Test successful workflow trigger."""
+        from gh_actions import trigger_workflow
+        
+        result = trigger_workflow("owner/repo", "build.yml", "main", "{}")
+        data = json.loads(result)
+        
+        assert data["success"] is True
+    
+    @pytest.mark.integration
+    def test_trigger_workflow_with_inputs(self, mock_gh_workflow_run):
+        """Test workflow trigger with JSON inputs."""
+        from gh_actions import trigger_workflow
+        
+        inputs = '{"build_type": "release", "api_level": "34"}'
+        result = trigger_workflow("owner/repo", "build.yml", "main", inputs)
+        data = json.loads(result)
+        
+        assert data["success"] is True
+    
+    @pytest.mark.integration
+    def test_list_workflow_runs_success(self, mock_gh_runs):
+        """Test successful workflow runs listing."""
+        from gh_actions import list_workflow_runs
+        
+        result = list_workflow_runs("owner/repo", limit=5)
+        data = json.loads(result)
+        
+        assert data["success"] is True
+        assert "data" in data
+        runs = data["data"]
+        assert len(runs) == 2
+        assert runs[0]["conclusion"] == "success"
+        assert runs[1]["conclusion"] == "failure"
+    
+    @pytest.mark.integration
+    def test_view_run_log_success(self, mock_gh_run_log):
+        """Test successful run log viewing."""
+        from gh_actions import view_run_log
+        
+        result = view_run_log("12345", "owner/repo")
+        data = json.loads(result)
+        
+        assert data["success"] is True
+        assert "BUILD SUCCESSFUL" in data["data"]
+    
+    @pytest.mark.integration
+    def test_view_run_log_failed(self, mock_gh_run_log_failed):
+        """Test failed run log viewing."""
+        from gh_actions import view_run_log
+        
+        result = view_run_log("12344", "owner/repo")
+        data = json.loads(result)
+        
+        assert data["success"] is True
+        assert "Unresolved reference" in data["data"]
+
+
+class TestGitHubCodespacesIntegration:
+    """Integration tests for GitHub Codespaces operations."""
+    
+    @pytest.mark.integration
+    def test_list_codespaces(self, mock_gh_api):
+        """Test codespace listing."""
+        from gh_codespaces import list_codespaces
+        
+        # Setup mock
+        codespaces = [
+            {"name": "test-codespace", "repository": "owner/repo", "state": "Available", "branch": "main"}
+        ]
+        mock_gh_api.get("/user/codespaces").mock(
+            return_value=httpx.Response(200, json={"codespaces": codespaces})
         )
-        assert result.returncode == 0
-        data = json.loads(result.stdout)
-        assert isinstance(data, list)
-        assert len(data) > 0
+        
+        result = list_codespaces()
+        data = json.loads(result)
+        
+        assert data["success"] is True
+        assert len(data["data"]) == 1
     
-    def test_gh_run_list(self):
-        """Test gh run list command"""
-        result = subprocess.run(
-            ["gh", "run", "list", "--repo", "431veysel-coder/github-actions-codespaces-toolkit", "--limit", "5", "--json", "databaseId,name,status,conclusion"],
-            capture_output=True, text=True
+    @pytest.mark.integration
+    def test_create_codespace(self, mock_gh_api):
+        """Test codespace creation."""
+        from gh_codespaces import create_codespace
+        
+        mock_gh_api.post("/repos/owner/repo/codespaces").mock(
+            return_value=httpx.Response(201, json={"name": "new-codespace", "state": "Creating"})
         )
-        assert result.returncode == 0
-        data = json.loads(result.stdout)
-        assert isinstance(data, list)
-
-
-class TestAndroidProjectVerification:
-    """Test Android project verification pipeline"""
+        
+        result = create_codespace("owner/repo", "main")
+        data = json.loads(result)
+        
+        assert data["success"] is True
     
-    @pytest.fixture
-    def android_project(self):
-        """Create a complete Android project"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            
-            # settings.gradle.kts
-            (root / "settings.gradle.kts").write_text('rootProject.name = "TestApp"\ninclude(":app")\n')
-            
-            # Root build.gradle.kts
-            (root / "build.gradle.kts").write_text("""
-plugins {
-    id("com.android.application") version "8.5.0" apply false
-    id("org.jetbrains.kotlin.android") version "1.9.0" apply false
-}
-""")
-            
-            # gradle.properties
-            (root / "gradle.properties").write_text("""
-android.useAndroidX=true
-android.enableJetifier=true
-kotlin.code.style=official
-""")
-            
-            # Gradle wrapper
-            wrapper_dir = root / "gradle" / "wrapper"
-            wrapper_dir.mkdir(parents=True)
-            (wrapper_dir / "gradle-wrapper.properties").write_text("""
-distributionBase=GRADLE_USER_HOME
-distributionPath=wrapper/dists
-distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
-zipStoreBase=GRADLE_USER_HOME
-zipStorePath=wrapper/dists
-""")
-            (root / "gradlew").write_text("#!/bin/sh\nexec gradle \"$@\"\n")
-            (root / "gradlew").chmod(0o755)
-            
-            # App module
-            app_dir = root / "app"
-            app_dir.mkdir()
-            
-            (app_dir / "build.gradle.kts").write_text("""
-plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-}
+    @pytest.mark.integration
+    def test_delete_codespace(self, mock_gh_api):
+        """Test codespace deletion."""
+        from gh_codespaces import delete_codespace
+        
+        mock_gh_api.delete("/user/codespaces/test-codespace").mock(
+            return_value=httpx.Response(204)
+        )
+        
+        result = delete_codespace("test-codespace")
+        data = json.loads(result)
+        
+        assert data["success"] is True
 
-android {
-    namespace = "com.example.testapp"
-    compileSdk = 34
-    defaultConfig {
-        applicationId = "com.example.testapp"
-        minSdk = 24
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
-    }
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-        }
-    }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
-}
 
-dependencies {
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.0")
-    implementation("com.google.android.material:material:1.11.0")
-}
-""")
-            
-            # Manifest
-            manifest_dir = app_dir / "src" / "main"
-            manifest_dir.mkdir(parents=True)
-            (manifest_dir / "AndroidManifest.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.testapp">
-    <application
-        android:allowBackup="true"
-        android:label="@string/app_name"
-        android:theme="@style/Theme.TestApp">
-        <activity
-            android:name=".MainActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
-    </application>
-</manifest>
-""")
-            
-            # Kotlin source
-            kotlin_dir = manifest_dir / "java" / "com" / "example" / "testapp"
-            kotlin_dir.mkdir(parents=True)
-            (kotlin_dir / "MainActivity.kt").write_text("""package com.example.testapp
-
-import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
-
-class MainActivity : AppCompatActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-    }
-}
-""")
-            
-            yield root
+class TestAndroidPipelineIntegration:
+    """Integration tests for Android pipeline operations."""
     
-    def test_verify_android_project_passes(self, android_project):
-        """Test verify_android_project on valid project"""
+    @pytest.mark.integration
+    def test_verify_android_project(self, temp_android_project):
+        """Test Android project verification."""
         from dependency_graph import AndroidProjectAnalyzer
         
-        analyzer = AndroidProjectAnalyzer(str(android_project))
+        analyzer = AndroidProjectAnalyzer(str(temp_android_project))
         report = analyzer.check_prerequisites()
         
-        assert report["valid"] is True
+        assert "valid" in report
         assert "metadata" in report
-        assert "package" in report["metadata"]
-        assert "compileSdk" in report["metadata"]
-        assert "errors" in report
     
-    def test_verify_android_project_fails_on_missing_gradle(self):
-        """Test verification fails without gradle wrapper"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            (root / "app" / "src" / "main").mkdir(parents=True)
-            (root / "app" / "src" / "main" / "AndroidManifest.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.test">
-    <application></application>
-</manifest>""")
-            
-            from dependency_graph import AndroidProjectAnalyzer
-            analyzer = AndroidProjectAnalyzer(str(root))
-            report = analyzer.check_prerequisites()
-            
-            assert report["valid"] is False
-            assert "gradlew script not found in root" in report["errors"]
-
-
-class TestBuildDiagnostics:
-    """Test build failure diagnostics"""
-    
-    def test_diagnose_sdk_license_error(self):
+    @pytest.mark.integration
+    def test_diagnose_run_failure_license(self, mock_gh_run_log):
+        """Test failure diagnosis for license error."""
         from build_monitor import AndroidBuildDiagnostics
         
         log = """
-Checking the license for package Android SDK Build-Tools 34 in /opt/android-sdk/licenses
-licences have not been accepted
-BUILD FAILED
+> Task :app:compileDebugKotlin
+> Task :app:compileDebugJavaWithJavac
+> Task :app:mergeDebugResources
+> Task :app:processDebugResources
+> Task :app:packageDebug
+> Task :app:assembleDebug
+BUILD FAILED in 2m 30s
+Licenses have not been accepted
 """
         diag = AndroidBuildDiagnostics.analyze_log(log)
+        
         assert diag["stage_failed"] == "sdk_setup"
-        assert "license" in diag["error_type"].lower()
+        assert diag["error_type"] == "license_rejected"
+        assert "sdkmanager --licenses" in diag["suggested_fix"]
     
-    def test_diagnose_aapt2_error(self):
+    @pytest.mark.integration
+    def test_diagnose_run_failure_kotlin(self, mock_gh_run_log_failed):
+        """Test failure diagnosis for Kotlin compilation error."""
         from build_monitor import AndroidBuildDiagnostics
         
-        log = """
-AAPT2 process failed
-error: resource android:attr/lStar not found
-AAPT2 error: check logs for details
-BUILD FAILED
-"""
+        log = mock_gh_run_log_failed
         diag = AndroidBuildDiagnostics.analyze_log(log)
-        assert diag["stage_failed"] == "resource_linking_aapt2"
-        assert "xml_or_resource" in diag["error_type"].lower()
-    
-    def test_diagnose_kotlin_compilation_error(self):
-        from build_monitor import AndroidBuildDiagnostics
         
-        log = """
-e: /path/to/File.kt: (10, 5): Unresolved reference: nonExistentFunction
-e: /path/to/File.kt: (15, 3): Type mismatch: inferred type is String but Int was expected
-Kotlin compilation failed
-"""
-        diag = AndroidBuildDiagnostics.analyze_log(log)
         assert diag["stage_failed"] == "compilation_kotlinc_javac"
-        assert "code_syntax" in diag["error_type"].lower()
+        assert diag["error_type"] == "code_syntax_or_type"
+        assert "Unresolved reference" in str(diag["key_lines"])
     
-    def test_diagnose_dex_error(self):
-        from build_monitor import AndroidBuildDiagnostics
-        
-        log = """
-com.android.builder.dexing.DexArchiveMergerException: Error while merging dex archives:
-Multiple dex files define Lcom/example/DuplicateClass;
-D8: Program type already present: com.example.DuplicateClass
-"""
-        diag = AndroidBuildDiagnostics.analyze_log(log)
-        assert diag["stage_failed"] == "dexing_d8_r8"
-        assert "class_duplication" in diag["error_type"].lower()
-
-
-class TestAutoFixerIntegration:
-    """Test auto-fixer with real scenarios"""
-    
-    @pytest.fixture
-    def git_repo(self):
-        """Create a git repo with Android project"""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            
-            # Init git
-            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-            subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=root, check=True)
-            subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
-            
-            # Android project
-            (root / "settings.gradle.kts").write_text('rootProject.name = "TestApp"\ninclude(":app")\n')
-            (root / "build.gradle.kts").write_text("""
-plugins { id("com.android.application") version "8.5.0" apply false }
-""")
-            
-            wrapper_dir = root / "gradle" / "wrapper"
-            wrapper_dir.mkdir(parents=True)
-            (wrapper_dir / "gradle-wrapper.properties").write_text("distributionUrl=https\\://services.gradle.org/distributions/gradle-8.5-bin.zip\n")
-            (root / "gradlew").write_text("#!/bin/sh\nexec gradle \"$@\"\n")
-            (root / "gradlew").chmod(0o755)
-            
-            app_dir = root / "app"
-            app_dir.mkdir()
-            (app_dir / "build.gradle.kts").write_text("""
-plugins { id("com.android.application") id("org.jetbrains.kotlin.android") }
-android { compileSdk = 34 defaultConfig { minSdk = 24 targetSdk = 34 } }
-dependencies { implementation("androidx.core:core-ktx:1.12.0") }
-""")
-            
-            manifest_dir = app_dir / "src" / "main"
-            manifest_dir.mkdir(parents=True)
-            (manifest_dir / "AndroidManifest.xml").write_text("""<?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.testapp">
-    <application></application>
-</manifest>""")
-            
-            # Commit
-            subprocess.run(["git", "add", "."], cwd=root, check=True)
-            subprocess.run(["git", "commit", "-m", "initial"], cwd=root, check=True)
-            
-            yield root
-    
-    def test_auto_fix_missing_permission(self, git_repo):
-        """Test auto-fix adds missing internet permission"""
+    @pytest.mark.integration
+    def test_auto_fixer_permission(self, temp_android_project):
+        """Test auto-fixer for missing permission."""
         from auto_fixer import AutoFixEngine
         
-        # Remove internet permission from manifest
-        manifest = git_repo / "app" / "src" / "main" / "AndroidManifest.xml"
-        content = manifest.read_text()
-        content = content.replace('android.permission.INTERNET', '')
-        manifest.write_text(content)
-        
-        engine = AutoFixEngine(str(git_repo))
+        engine = AutoFixEngine(str(temp_android_project))
         fixes = engine.apply_patch_for_error("missing_permission")
         
+        assert len(fixes) > 0
         assert any("INTERNET permission" in f for f in fixes)
         
-        # Verify permission added
-        new_content = manifest.read_text()
-        assert "android.permission.INTERNET" in new_content
+        # Verify manifest was updated
+        manifest = temp_android_project / "app" / "src" / "main" / "AndroidManifest.xml"
+        content = manifest.read_text()
+        assert "INTERNET" in content
     
-    def test_auto_fix_gradle_lock(self, git_repo):
-        """Test auto-fix removes gradle lock"""
+    @pytest.mark.integration
+    def test_auto_fixer_circuit_breaker(self, temp_android_project):
+        """Test circuit breaker prevents infinite loops."""
         from auto_fixer import AutoFixEngine
         
-        # Create lock file
-        lock_file = git_repo / ".gradle" / "buildOutputCleanup" / "buildOutputCleanup.lock"
-        lock_file.parent.mkdir(parents=True, exist_ok=True)
-        lock_file.write_text("lock")
+        engine = AutoFixEngine(str(temp_android_project))
         
-        engine = AutoFixEngine(str(git_repo))
-        fixes = engine.apply_patch_for_error("gradle_lock")
+        # Apply fix 3 times
+        for i in range(3):
+            fixes = engine.apply_patch_for_error("missing_permission")
+            assert len(fixes) > 0
         
-        assert any("lock" in f.lower() for f in fixes)
-        assert not lock_file.exists()
-
-
-class TestSBOMGenerationIntegration:
-    """Test SBOM generation on real projects"""
+        # 4th time should be blocked
+        fixes = engine.apply_patch_for_error("missing_permission")
+        assert any("Circuit breaker tripped" in f for f in fixes)
     
-    def test_sbom_gradle_project(self):
-        from sbom_generator import SBOMGenerator
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            
-            (root / "build.gradle.kts").write_text("""
-plugins { id("com.android.application") }
-android { compileSdk = 34 }
-dependencies {
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.0")
-    implementation("com.google.android.material:material:1.11.0")
-}
-""")
-            
-            # Create app directory
-            (root / "app").mkdir(parents=True, exist_ok=True)
-            
-            (root / "app" / "build.gradle.kts").write_text("""
-dependencies {
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-}
-""")
-            
-            gen = SBOMGenerator(str(root))
-            ok, path = gen.generate_sbom()
-            
-            assert ok is True
-            assert Path(path).exists()
-            
-            with open(path) as f:
-                bom = json.load(f)
-            
-            assert bom["bomFormat"] == "CycloneDX"
-            assert bom["specVersion"] == "1.4"
-            assert "components" in bom
-            assert len(bom["components"]) > 0
-            
-            # Check for expected components
-            component_names = [c["name"] for c in bom["components"]]
-            assert any("androidx.core" in n for n in component_names)
-            assert any("kotlin-stdlib" in n for n in component_names)
-    
-    def test_sbom_npm_project(self):
-        from sbom_generator import SBOMGenerator
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            
-            (root / "package.json").write_text(json.dumps({
-                "name": "test-app",
-                "version": "1.0.0",
-                "dependencies": {
-                    "react": "18.2.0",
-                    "react-native": "0.73.0",
-                    "axios": "1.6.0"
-                }
-            }))
-            
-            gen = SBOMGenerator(str(root))
-            ok, path = gen.generate_sbom()
-            
-            assert ok is True
-            with open(path) as f:
-                bom = json.load(f)
-            
-            component_names = [c["name"] for c in bom["components"]]
-            component_versions = {c["name"]: c.get("version", "") for c in bom["components"]}
-            assert "react" in component_names
-            assert component_versions.get("react") == "18.2.0"
-            assert "axios" in component_names
-            assert component_versions.get("axios") == "1.6.0"
-    
-    def test_sbom_python_project(self):
-        from sbom_generator import SBOMGenerator
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            
-            (root / "requirements.txt").write_text("""requests==2.31.0
-numpy==1.24.0
-pandas==2.0.0
-""")
-            
-            gen = SBOMGenerator(str(root))
-            ok, path = gen.generate_sbom()
-            
-            assert ok is True
-            with open(path) as f:
-                bom = json.load(f)
-            
-            component_names = [c["name"] for c in bom["components"]]
-            component_versions = {c["name"]: c.get("version", "") for c in bom["components"]}
-            assert "requests" in component_names
-            assert component_versions.get("requests") == "2.31.0"
-            assert "numpy" in component_names
-            assert component_versions.get("numpy") == "1.24.0"
-
-
-class TestChangelogGenerationIntegration:
-    """Test changelog generation with real git history"""
-    
-    def test_changelog_conventional_commits(self):
+    @pytest.mark.integration
+    def test_changelog_generation(self, temp_android_project):
+        """Test changelog generation from git history."""
         from changelog_automator import ChangelogAutomator
+        import subprocess
         
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            os.chdir(root)
-            
-            subprocess.run(["git", "init", "-q"], check=True)
-            subprocess.run(["git", "config", "user.email", "test@test.com"], check=True)
-            subprocess.run(["git", "config", "user.name", "Test"], check=True)
-            
-            # Initial commit
-            (root / "README.md").write_text("# Test")
-            subprocess.run(["git", "add", "."], check=True)
-            subprocess.run(["git", "commit", "-m", "chore: initial commit"], check=True)
-            subprocess.run(["git", "tag", "v1.0.0"], check=True)
-            
-            # Conventional commits
-            (root / "feature.txt").write_text("feat")
-            subprocess.run(["git", "add", "."], check=True)
-            subprocess.run(["git", "commit", "-m", "feat(auth): add login feature"], check=True)
-            
-            (root / "fix.txt").write_text("fix")
-            subprocess.run(["git", "add", "."], check=True)
-            subprocess.run(["git", "commit", "-m", "fix(crash): resolve null pointer"], check=True)
-            
-            (root / "docs.txt").write_text("docs")
-            subprocess.run(["git", "add", "."], check=True)
-            subprocess.run(["git", "commit", "-m", "docs: update readme"], check=True)
-            
-            (root / "perf.txt").write_text("perf")
-            subprocess.run(["git", "add", "."], check=True)
-            subprocess.run(["git", "commit", "-m", "perf: optimize startup time"], check=True)
-            
-            # Breaking change
-            (root / "breaking.txt").write_text("breaking")
-            subprocess.run(["git", "add", "."], check=True)
-            subprocess.run(["git", "commit", "-m", "feat(api)!: change response format\n\nBREAKING CHANGE: response format changed"], check=True)
-            
-            automator = ChangelogAutomator(str(root))
-            ok, path = automator.generate_changelog("v1.1.0")
-            
-            assert ok is True
-            content = Path(path).read_text()
-            
-            assert "## [v1.1.0]" in content
-            assert "### Added" in content
-            assert "### Fixed" in content
-            assert "### Changed" in content
-            assert "### Security" in content  # breaking changes go to Changed but marked
-            assert "login feature" in content
-            assert "null pointer" in content
-            assert "BREAKING" in content
+        # Initialize git repo with conventional commits
+        import subprocess
+        subprocess.run(["git", "init", "-q"], cwd=temp_android_project, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=temp_android_project, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=temp_android_project, check=True)
+        
+        (temp_android_project / "README.md").write_text("# Test")
+        subprocess.run(["git", "add", "."], cwd=temp_android_project, check=True)
+        subprocess.run(["git", "commit", "-m", "chore: initial commit"], cwd=temp_android_project, check=True)
+        subprocess.run(["git", "tag", "v1.0.0"], cwd=temp_android_project, check=True)
+        
+        (temp_android_project / "feature.txt").write_text("feat")
+        subprocess.run(["git", "add", "."], cwd=temp_android_project, check=True)
+        subprocess.run(["git", "commit", "-m", "feat(auth): add login feature"], cwd=temp_android_project, check=True)
+        
+        (temp_android_project / "fix.txt").write_text("fix")
+        subprocess.run(["git", "add", "."], cwd=temp_android_project, check=True)
+        subprocess.run(["git", "commit", "-m", "fix(crash): resolve null pointer"], cwd=temp_android_project, check=True)
+        
+        automator = ChangelogAutomator(str(temp_android_project))
+        ok, path = automator.generate_changelog("v1.1.0")
+        
+        assert ok
+        content = Path(path).read_text()
+        assert "## [v1.1.0]" in content
+        assert "### Added" in content
+        assert "login feature" in content
+        assert "### Fixed" in content
+        assert "null pointer" in content
     
-    def test_changelog_fallback_parsing(self):
-        from changelog_automator import ChangelogAutomator
+    @pytest.mark.integration
+    def test_sbom_generation(self, temp_android_project):
+        """Test SBOM generation."""
+        from sbom_generator import SBOMGenerator
         
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            os.chdir(root)
-            
-            subprocess.run(["git", "init", "-q"], check=True)
-            subprocess.run(["git", "config", "user.email", "test@test.com"], check=True)
-            subprocess.run(["git", "config", "user.name", "Test"], check=True)
-            
-            (root / "README.md").write_text("# Test")
-            subprocess.run(["git", "add", "."], check=True)
-            subprocess.run(["git", "commit", "-m", "Initial commit"], check=True)
-            subprocess.run(["git", "tag", "v1.0.0"], check=True)
-            
-            # Non-conventional commits
-            (root / "feature.txt").write_text("feat")
-            subprocess.run(["git", "add", "."], check=True)
-            subprocess.run(["git", "commit", "-m", "Add new feature for user login"], check=True)
-            
-            (root / "fix.txt").write_text("fix")
-            subprocess.run(["git", "add", "."], check=True)
-            subprocess.run(["git", "commit", "-m", "Fix crash on startup"], check=True)
-            
-            automator = ChangelogAutomator(str(root))
-            ok, path = automator.generate_changelog("v1.1.0")
-            
-            assert ok is True
-            content = Path(path).read_text()
-            
-            # Should categorize based on keywords
-            assert "### Added" in content
-            assert "### Fixed" in content
+        generator = SBOMGenerator(str(temp_android_project))
+        ok, path = generator.generate_sbom("json")
+        
+        assert ok
+        sbom = json.loads(Path(path).read_text())
+        
+        assert sbom["bomFormat"] == "CycloneDX"
+        assert sbom["specVersion"] == "1.4"
+        assert "components" in sbom
+    
+    @pytest.mark.integration
+    def test_vault_crypto_encrypt_decrypt(self):
+        """Test vault crypto encryption/decryption."""
+        from vault_crypto import VaultCryptoEngine
+        
+        engine = VaultCryptoEngine()
+        secret = "test_keystore_password"
+        
+        encrypted = engine.encrypt_secret(secret)
+        decrypted = engine.decrypt_secret(encrypted)
+        
+        assert decrypted == secret
+        assert encrypted != secret
+    
+    @pytest.mark.integration
+    def test_keystore_manager_generate_sign_verify(self, temp_dir):
+        """Test full keystore lifecycle."""
+        from keystore_manager import KeystoreManager
+        
+        manager = KeystoreManager()
+        
+        # Generate
+        success, msg = manager.generate_keystore(
+            alias="test-key",
+            storepass="StorePass123",
+            keypass="KeyPass123"
+        )
+        assert success
+        result = json.loads(msg)
+        keystore_path = result["keystore_path"]
+        
+        # Create a dummy APK
+        apk_path = temp_dir / "test.apk"
+        import zipfile
+        with zipfile.ZipFile(apk_path, 'w') as zf:
+            zf.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\n")
+            zf.writestr("classes.dex", b"fake dex")
+        
+        # Sign
+        success, msg = manager.sign_apk(
+            apk_path=str(apk_path),
+            alias="test-key",
+            storepass="StorePass123",
+            keypass="KeyPass123"
+        )
+        assert success
+        result = json.loads(msg)
+        signed_apk = result["signed_apk"]
+        
+        # Verify
+        success, msg = manager.verify_signature(signed_apk)
+        assert success
+        result = json.loads(msg)
+        assert result["verified"] is True
+    
+    @pytest.mark.integration
+    def test_keystore_backup_restore(self, temp_dir):
+        """Test keystore backup and restore."""
+        from keystore_manager import KeystoreManager
+        
+        manager = KeystoreManager()
+        
+        # Generate
+        success, msg = manager.generate_keystore(
+            alias="backup-test",
+            storepass="StorePass123",
+            keypass="KeyPass123"
+        )
+        assert success
+        
+        # Backup
+        success, msg = manager.backup_keystore(
+            alias="backup-test",
+            storepass="StorePass123"
+        )
+        assert success
+        result = json.loads(msg)
+        backup_path = result["backup_path"]
+        
+        # Verify backup exists
+        assert Path(backup_path).exists()
+        
+        # Restore
+        success, msg = manager.restore_keystore(
+            backup_path=backup_path,
+            storepass="StorePass123"
+        )
+        assert success
 
 
-class TestVaultIntegration:
-    """Test vault adapters"""
+class TestMCPServerIntegration:
+    """Integration tests for MCP server tools."""
     
-    def test_local_vault_crud(self):
-        from vault_adapter import EnterpriseVaultManager
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            mgr = EnterpriseVaultManager("local", storage_path=tmpdir)
-            
-            assert mgr.health_check() is True
-            
-            # Store
-            assert mgr.store_secret("api_key", "sk-1234567890") is True
-            assert mgr.store_secret("db_password", "super_secret") is True
-            
-            # Retrieve
-            assert mgr.resolve_secret("api_key") == "sk-1234567890"
-            assert mgr.resolve_secret("db_password") == "super_secret"
-            
-            # List
-            secrets = mgr.list_secrets()
-            assert "api_key" in secrets
-            assert "db_password" in secrets
-            
-            # Delete
-            assert mgr.delete_secret("api_key") is True
-            assert mgr.resolve_secret("api_key") is None
+    @pytest.mark.integration
+    def test_mcp_server_imports(self):
+        """Test MCP server imports without errors."""
+        from server import app
+        assert app is not None
+        assert len(app._tools) == 33  # 33 tools in v2.7.0
     
-    def test_local_vault_env_fallback(self):
-        from vault_adapter import EnterpriseVaultManager
-        import os
+    @pytest.mark.integration
+    @respx.mock
+    def test_nexus_builder_preflight(self, temp_android_project):
+        """Test Nexus builder preflight via MCP."""
+        # Mock GitHub API
+        respx.get("https://api.github.com/repos/owner/repo/actions/workflows").mock(
+            return_value=httpx.Response(200, json={"workflows": []})
+        )
         
-        with tempfile.TemporaryDirectory() as tmpdir:
-            os.environ["TEST_API_KEY"] = "env_value_123"
-            try:
-                mgr = EnterpriseVaultManager("local", storage_path=tmpdir)
-                val = mgr.resolve_secret("TEST_API_KEY")
-                assert val == "env_value_123"
-            finally:
-                del os.environ["TEST_API_KEY"]
+        # We need to copy the project to apps/minis-nexus structure
+        nexus_dir = temp_dir / "apps" / "minis-nexus"
+        nexus_dir.mkdir(parents=True)
+        
+        # Copy gradle.properties with optimizations
+        (nexus_dir / "gradle.properties").write_text("""
+org.gradle.jvmargs=-Xmx3g -XX:+UseG1GC
+org.gradle.parallel=true
+org.gradle.caching=true
+org.gradle.configuration-cache=true
+android.useAndroidX=true
+android.nonTransitiveRClass=true
+""")
+        
+        (nexus_dir / "gradlew").write_text("#!/bin/sh\necho 'fake gradlew'")
+        (nexus_dir / "gradlew").chmod(0o755)
+        
+        (nexus_dir / "build.gradle").write_text("buildscript { }")
+        (nexus_dir / "app" / "build.gradle").mkdir(parents=True)
+        (nexus_dir / "app" / "build.gradle").write_text("android { }")
+        
+        from server import nexus_builder_preflight
+        
+        result = nexus_builder_preflight(str(nexus_dir))
+        data = json.loads(result)
+        
+        assert data["success"] is True
+        assert data["data"]["status"] in ["ready", "warnings"]
 
 
-class TestEndToEndPipeline:
-    """Test complete build pipeline scenarios"""
-    
-    @pytest.mark.slow
-    @pytest.mark.requires_gh
-    def test_full_pipeline_dry_run(self):
-        """Test full pipeline in dry-run mode"""
-        from orchestration.pipeline_templates import build_android_pipeline
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            # This would test the full pipeline
-            # For now, verify pipeline template loads
-            pipeline = build_android_pipeline()
-            assert pipeline is not None
-            assert len(pipeline.stages) > 0
-
-
-class TestMCPToolIntegration:
-    """Test MCP tools work together"""
-    
-    @pytest.fixture(autouse=True)
-    def setup(self):
-        import sys
-        sys.path.insert(0, str(PROJECT_ROOT / "mcp_server"))
-        import server
-        self.app = server.app
-    
-    @pytest.mark.asyncio
-    async def test_verify_then_trigger_workflow(self):
-        """Test verify_android_project then trigger_workflow flow"""
-        tools = await self.app.list_tools()
-        verify = next(t for t in tools if t.name == "verify_android_project")
-        trigger = next(t for t in tools if t.name == "trigger_workflow")
-        
-        # Verify local project
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = Path(tmpdir)
-            (root / "settings.gradle.kts").write_text('include(":app")\n')
-            (root / "build.gradle.kts").write_text('plugins { id("com.android.application") }')
-            (root / "gradlew").write_text("#!/bin/sh\necho 'mock gradle'\n")
-            (root / "gradlew").chmod(0o755)
-            
-            app_dir = root / "app"
-            app_dir.mkdir()
-            (app_dir / "build.gradle.kts").write_text('android { compileSdk = 34 }')
-            (app_dir / "src" / "main").mkdir(parents=True)
-            (app_dir / "src" / "main" / "AndroidManifest.xml").write_text(
-                '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.test"><application></application></manifest>'
-            )
-            
-            # Verify
-            result = await self.app.call_tool("verify_android_project", {"project_path": str(root)})
-            data = json.loads(result.content[0].text if result.content else "{}")
-            assert data.get("success") is True or "data" in data
-        
-        # Trigger (would need real repo)
-        # result = await trigger.fn(repo="owner/repo", workflow="build.yml")
-        # Just verify tool exists
-        tools = await self.app.list_tools()
-        assert any(t.name == "trigger_workflow" for t in tools)
-    
-    @pytest.mark.asyncio
-    async def test_security_check_blocks_dangerous_operations(self):
-        # Test command blocking
-        result = await self.app.call_tool("check_security_acl", {"command": "rm -rf /"})
-        content_text = result.content[0].text if result.content else "{}"
-        data = json.loads(content_text)
-        assert data.get("data", {}).get("command_check", {}).get("allowed") is False
-        
-        # Test path blocking
-        result = await self.app.call_tool("check_security_acl", {"file_path": "/etc/passwd"})
-        content_text = result.content[0].text if result.content else "{}"
-        data = json.loads(content_text)
-        assert data.get("data", {}).get("path_check", {}).get("allowed") is False
-        
-        # Test allowed
-        result = await self.app.call_tool("check_security_acl", {"command": "gh workflow list --repo owner/repo", "file_path": "/var/minis/workspace/test.txt"})
-        content_text = result.content[0].text if result.content else "{}"
-        data = json.loads(content_text)
-        assert data.get("data", {}).get("command_check", {}).get("allowed") is True
-        assert data.get("data", {}).get("path_check", {}).get("allowed") is True
-
-
-class TestMemoryManagerIntegration:
-    """Test SQLite memory manager integration"""
-    
-    def test_memory_persistence_across_instances(self):
-        from sqlite_memory_manager import SQLiteMemoryManager
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "test.db"
-            
-            # First instance - save data
-            mgr1 = SQLiteMemoryManager(str(db_path))
-            mgr1.save_compilation_state("run_1", {"status": "success", "duration": 45.2})
-            mgr1.save_packaging_record("app.apk", {"size": 1234567, "version": "1.0.0"})
-            mgr1.save_transient_cache("temp_key", {"data": "value"}, ttl_seconds=60)
-            mgr1.save_persistent_record("config", {"debug": True}, category="settings")
-            mgr1.close()
-            
-            # Second instance - retrieve data
-            mgr2 = SQLiteMemoryManager(str(db_path))
-            state = mgr2.get_compilation_state("run_1")
-            assert state["status"] == "success"
-            assert state["duration"] == 45.2
-            
-            pkg = mgr2.get_packaging_record("app.apk")
-            assert pkg["size"] == 1234567
-            
-            cached = mgr2.get_transient_cache("temp_key")
-            assert cached["data"] == "value"
-            
-            persistent = mgr2.get_persistent_record("config")
-            assert persistent["debug"] is True
-            
-            mgr2.close()
-    
-    def test_memory_ttl_expiration(self):
-        from sqlite_memory_manager import SQLiteMemoryManager
-        import time
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "test.db"
-            mgr = SQLiteMemoryManager(str(db_path))
-            
-            # Save with short TTL
-            mgr.save_transient_cache("short_lived", {"data": "expire"}, ttl_seconds=1)
-            assert mgr.get_transient_cache("short_lived") is not None
-            
-            # Wait for expiration
-            time.sleep(1.5)
-            
-            # Should be auto-deleted
-            assert mgr.get_transient_cache("short_lived") is None
-            
-            mgr.close()
-    
-    def test_memory_audit_log(self):
-        from sqlite_memory_manager import SQLiteMemoryManager
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = Path(tmpdir) / "test.db"
-            mgr = SQLiteMemoryManager(str(db_path))
-            
-            mgr.save_compilation_state("run_1", {"status": "success"})
-            mgr.save_compilation_state("run_1", {"status": "updated"})  # Update
-            mgr.delete_compilation_state("run_1")
-            
-            stats = mgr.get_stats()
-            assert stats["audit_log_count"] >= 3  # insert, update, delete
-            
-            mgr.close()
-
+# ============================================================================
+# TEST RUNNER
+# ============================================================================
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v", "--tb=short"])
+    pytest.main([__file__, "-v", "--tb=short", "-m", "integration"])

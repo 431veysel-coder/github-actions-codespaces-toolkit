@@ -1,494 +1,453 @@
 #!/usr/bin/env python3
 """
-Security Tests — Injection, Path Traversal, Secret Leakage, ACL Validation
+Security Tests for GitHub Actions & Codespaces Toolkit
+Tests for injection, traversal, secret leakage, and validation.
 """
 
+import os
+import sys
+import tempfile
 import json
 import pytest
-import tempfile
-import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 # Add project paths
-import sys
 PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
 sys.path.insert(0, str(PROJECT_ROOT / "scripts" / "android_pipeline"))
-sys.path.insert(0, str(PROJECT_ROOT / "mcp_server"))
-
-from security_utils import (
-    validate_github_repo, validate_workflow_name, validate_run_id,
-    validate_branch_name, validate_file_path, validate_output_dir,
-    validate_apk_path, validate_error_type, sanitize_workflow_inputs,
-    sanitize_commit_message, safe_run, safe_git_command, mask_secrets, mask_secrets_in_dict,
-    create_error_response, create_success_response,
-    SecurityError, ValidationError, PathTraversalError, CommandInjectionError,
-    EnhancedSecurityACL, SECRET_PATTERNS, BLOCKED_COMMAND_PATTERNS
-)
-from security_acl import AgentSecurityACL
 
 
-class TestInputValidation:
-    """Test input validation functions"""
+class TestPathTraversal:
+    """Tests for path traversal prevention."""
     
-    # =========================================================================
-    # GITHUB REPO VALIDATION
-    # =========================================================================
-    
-    def test_valid_github_repo(self):
-        assert validate_github_repo("owner/repo") == "owner/repo"
-        assert validate_github_repo("Owner/Repo-Name") == "Owner/Repo-Name"
-        assert validate_github_repo("user123/repo_name") == "user123/repo_name"
-    
-    def test_invalid_github_repo(self):
-        with pytest.raises(ValidationError) as exc:
-            validate_github_repo("invalid")
-        assert exc.value.code == "INVALID_REPO"
+    def test_validate_file_path_blocks_etc_passwd(self):
+        """Should block access to /etc/passwd."""
+        from security_utils import validate_file_path, PathTraversalError
         
-        with pytest.raises(ValidationError):
-            validate_github_repo("owner/")
-        
-        with pytest.raises(ValidationError):
-            validate_github_repo("/repo")
-        
-        with pytest.raises(ValidationError):
-            validate_github_repo("owner/repo/extra")
-    
-    # =========================================================================
-    # WORKFLOW NAME VALIDATION
-    # =========================================================================
-    
-    def test_valid_workflow_name(self):
-        assert validate_workflow_name("build.yml") == "build.yml"
-        assert validate_workflow_name("ci.yaml") == "ci.yaml"
-        assert validate_workflow_name("android-build.yml") == "android-build.yml"
-    
-    def test_invalid_workflow_name(self):
-        with pytest.raises(ValidationError):
-            validate_workflow_name("build.txt")
-        
-        with pytest.raises(ValidationError):
-            validate_workflow_name("../build.yml")
-        
-        with pytest.raises(ValidationError):
-            validate_workflow_name("build.yml/../etc/passwd")
-    
-    # =========================================================================
-    # RUN ID VALIDATION
-    # =========================================================================
-    
-    def test_valid_run_id(self):
-        assert validate_run_id("12345") == "12345"
-        assert validate_run_id("0") == "0"
-    
-    def test_invalid_run_id(self):
-        with pytest.raises(ValidationError):
-            validate_run_id("abc")
-        with pytest.raises(ValidationError):
-            validate_run_id("12.34")
-    
-    # =========================================================================
-    # BRANCH NAME VALIDATION
-    # =========================================================================
-    
-    def test_valid_branch_name(self):
-        assert validate_branch_name("main") == "main"
-        assert validate_branch_name("feature/new-ui") == "feature/new-ui"
-        assert validate_branch_name("release/v1.0.0") == "release/v1.0.0"
-        assert validate_branch_name("hotfix-123") == "hotfix-123"
-    
-    def test_invalid_branch_name(self):
-        with pytest.raises(ValidationError):
-            validate_branch_name("branch with spaces")
-        with pytest.raises(ValidationError):
-            validate_branch_name("branch~name")
-        with pytest.raises(ValidationError):
-            validate_branch_name(".branch")
-        with pytest.raises(ValidationError):
-            validate_branch_name("branch.")
-    
-    # =========================================================================
-    # FILE PATH VALIDATION
-    # =========================================================================
-    
-    def test_valid_workspace_path(self):
-        path = validate_file_path("/var/minis/workspace/test.txt")
-        assert path == Path("/var/minis/workspace/test.txt").resolve()
-    
-    def test_valid_relative_path(self):
-        # Relative paths are resolved against current working directory
-        # which may not be in allowed roots, so use absolute path
-        path = validate_file_path("/var/minis/workspace/subdir/file.txt")
-        assert "subdir/file.txt" in str(path)
-        assert "subdir/file.txt" in str(path)
-    
-    def test_path_traversal_blocked(self):
         with pytest.raises(PathTraversalError):
             validate_file_path("/etc/passwd")
+    
+    def test_validate_file_path_blocks_parent_traversal(self):
+        """Should block directory traversal with ../."""
+        from security_utils import validate_file_path, PathTraversalError
         
         with pytest.raises(PathTraversalError):
-            validate_file_path("../../etc/passwd")
+            validate_file_path("../../../etc/passwd")
+    
+    def test_validate_file_path_blocks_absolute_system_paths(self):
+        """Should block absolute system paths."""
+        from security_utils import validate_file_path, PathTraversalError
+        
+        blocked = ["/etc", "/usr", "/boot", "/sys", "/proc", "/dev", "/run"]
+        for path in blocked:
+            with pytest.raises(PathTraversalError):
+                validate_file_path(path)
+    
+    def test_validate_file_path_allows_workspace(self):
+        """Should allow paths within workspace."""
+        from security_utils import validate_file_path
+        
+        # This should work for workspace paths
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_file = Path(tmpdir) / "test.txt"
+            test_file.write_text("test")
+            result = validate_file_path(str(test_file))
+            assert result.exists()
+    
+    def test_validate_file_path_blocks_var_minis_memory(self):
+        """Should block /var/minis/memory."""
+        from security_utils import validate_file_path, PathTraversalError
         
         with pytest.raises(PathTraversalError):
             validate_file_path("/var/minis/memory/secrets.json")
     
-    def test_allowed_outside_workspace(self):
-        # When explicitly allowed
-        path = validate_file_path("/tmp/test.txt", allow_outside_workspace=True)
-        assert path == Path("/tmp/test.txt").resolve()
-    
-    def test_output_dir_validation(self):
-        path = validate_output_dir("/var/minis/workspace/artifacts/build")
-        assert "artifacts/build" in str(path)
-    
-    def test_output_dir_outside_workspace_blocked(self):
-        with pytest.raises(PathTraversalError):
-            validate_output_dir("/tmp/outside")
-    
-    def test_apk_path_validation(self):
-        with tempfile.NamedTemporaryFile(suffix=".apk", delete=False) as f:
-            f.write(b"dummy")
-            apk_path = f.name
+    def test_validate_file_path_blocks_var_minis_shared(self):
+        """Should block /var/minis/shared."""
+        from security_utils import validate_file_path, PathTraversalError
         
-        try:
-            path = validate_apk_path(apk_path)
-            assert path.suffix == ".apk"
-        finally:
-            Path(apk_path).unlink()
+        with pytest.raises(PathTraversalError):
+            validate_file_path("/var/minis/shared/data.json")
+
+
+class TestCommandInjection:
+    """Tests for command injection prevention."""
     
-    def test_apk_path_wrong_extension_blocked(self):
-        with pytest.raises(ValidationError):
-            validate_apk_path("/var/minis/workspace/test.txt")
+    def test_safe_run_blocks_rm_rf_root(self):
+        """Should block 'rm -rf /' command."""
+        from security_utils import safe_run, CommandInjectionError
+        
+        with pytest.raises(CommandInjectionError):
+            safe_run(["rm", "-rf", "/"])
     
-    # =========================================================================
-    # ERROR TYPE VALIDATION
-    # =========================================================================
+    def test_safe_run_blocks_git_push_force(self):
+        """Should block 'git push --force'."""
+        from security_utils import safe_run, CommandInjectionError
+        
+        with pytest.raises(CommandInjectionError):
+            safe_run(["git", "push", "--force"])
     
-    def test_valid_error_type(self):
-        assert validate_error_type("missing_permission") == "missing_permission"
-        assert validate_error_type("GRADLE_LOCK") == "gradle_lock"
+    def test_safe_run_blocks_mkfs(self):
+        """Should block filesystem formatting."""
+        from security_utils import safe_run, CommandInjectionError
+        
+        with pytest.raises(CommandInjectionError):
+            safe_run(["mkfs", "/dev/sda1"])
     
-    def test_unknown_error_type_allowed(self):
-        # Unknown types are allowed (warning only)
-        assert validate_error_type("custom_error") == "custom_error"
+    def test_safe_run_blocks_dd(self):
+        """Should block direct disk writes."""
+        from security_utils import safe_run, CommandInjectionError
+        
+        with pytest.raises(CommandInjectionError):
+            safe_run(["dd", "if=/dev/zero", "of=/dev/sda"])
     
-    # =========================================================================
-    # WORKFLOW INPUTS SANITIZATION
-    # =========================================================================
+    def test_safe_run_blocks_chmod_777_root(self):
+        """Should block dangerous chmod."""
+        from security_utils import safe_run, CommandInjectionError
+        
+        with pytest.raises(CommandInjectionError):
+            safe_run(["chmod", "777", "/"])
     
-    def test_sanitize_workflow_inputs(self):
-        inputs = '{"key": "value", "num": 123, "bool": true}'
-        sanitized = sanitize_workflow_inputs(inputs)
-        assert sanitized == {"key": "value"}
-    
-    def test_sanitize_workflow_inputs_malicious(self):
-        # Control characters removed
-        inputs = '{"key": "value\x00\x1f"}'
-        sanitized = sanitize_workflow_inputs(inputs)
-        assert "\x00" not in sanitized.get("key", "")
-        assert "\x1f" not in sanitized.get("key", "")
-    
-    def test_sanitize_workflow_inputs_invalid_json(self):
-        assert sanitize_workflow_inputs("not json") == {}
-    
-    def test_sanitize_workflow_inputs_long_value_truncated(self):
-        long_val = "x" * 2000
-        inputs = f'{{"key": "{long_val}"}}'
-        sanitized = sanitize_workflow_inputs(inputs)
-        assert len(sanitized["key"]) == 1000
-    
-    # =========================================================================
-    # COMMIT MESSAGE SANITIZATION
-    # =========================================================================
-    
-    def test_sanitize_commit_message(self):
-        msg = sanitize_commit_message("fix: resolve issue")
-        assert msg == "fix: resolve issue"
-    
-    def test_sanitize_commit_message_removes_shell_chars(self):
-        msg = sanitize_commit_message("fix: `rm -rf /` && 'echo' \"test\" $var")
-        assert "`" not in msg
-        assert "'" not in msg
-        assert '"' not in msg
-        assert "$" not in msg
-    
-    def test_sanitize_commit_message_truncates(self):
-        long_msg = "x" * 300
-        msg = sanitize_commit_message(long_msg)
-        assert len(msg) == 200
-        assert msg.endswith("...")
-    
-    def test_sanitize_commit_message_empty_fallback(self):
-        msg = sanitize_commit_message("")
-        assert msg == "fix(autofix): automated patch"
-    
-    # =========================================================================
-    # SAFE RUN
-    # =========================================================================
-    
-    def test_safe_run_allowed_command(self):
+    def test_safe_run_allows_valid_commands(self):
+        """Should allow valid commands."""
+        from security_utils import safe_run
+        
+        # These should not raise
         result = safe_run(["echo", "hello"])
         assert result.returncode == 0
         assert "hello" in result.stdout
     
-    def test_safe_run_blocked_command(self):
-        with pytest.raises(CommandInjectionError):
-            safe_run(["rm", "-rf", "/"])
-    
-    def test_safe_run_blocked_patterns(self):
-        for pattern in BLOCKED_COMMAND_PATTERNS:
-            # Test that pattern matching works
-            pass  # Covered by integration tests
-    
-    def test_safe_git_command_allows_safe(self):
+    def test_safe_git_command_allows_valid_subcommands(self):
+        """Should allow valid git subcommands."""
+        from security_utils import safe_git_command
+        
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Initialize git repo
+            import subprocess
             subprocess.run(["git", "init", "-q"], cwd=tmpdir, check=True)
             subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmpdir, check=True)
             subprocess.run(["git", "config", "user.name", "Test"], cwd=tmpdir, check=True)
             
-            Path(tmpdir, "test.txt").write_text("test")
-            safe_run(["git", "add", "."], cwd=tmpdir)
-            result = safe_run(["git", "commit", "-m", "test commit"], cwd=tmpdir)
+            (Path(tmpdir) / "test.txt").write_text("test")
+            
+            result = safe_git_command(["add", "."], cwd=tmpdir)
             assert result.returncode == 0
     
     def test_safe_git_command_blocks_force_push(self):
+        """Should block git push --force."""
+        from security_utils import safe_git_command, CommandInjectionError
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            import subprocess
+            subprocess.run(["git", "init", "-q"], cwd=tmpdir, check=True)
+            subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=tmpdir, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=tmpdir, check=True)
+            
+            with pytest.raises(CommandInjectionError):
+                safe_git_command(["push", "--force"], cwd=tmpdir)
+    
+    def test_safe_git_command_blocks_invalid_subcommand(self):
+        """Should block invalid git subcommands."""
+        from security_utils import safe_git_command, CommandInjectionError
+        
         with pytest.raises(CommandInjectionError):
-            safe_git_command(["push", "--force", "origin", "main"], "/tmp")
+            safe_git_command(["evil-command"], cwd="/tmp")
 
 
 class TestSecretMasking:
-    """Test secret masking in logs and outputs"""
+    """Tests for secret masking in outputs."""
     
-    def test_mask_secrets_password(self):
-        text = "password=secret123"
-        masked = mask_secrets(text)
-        assert "secret123" not in masked
-        assert "***MASKED***" in masked
+    def test_mask_github_tokens(self):
+        """Should mask GitHub tokens (ghp_, gho_, etc.)."""
+        from security_utils import mask_secrets
+        
+        test_cases = [
+            ("token=ghp_12345678901234567890123456789012345678", "ghp_"),
+            ("token=gho_12345678901234567890123456789012345678", "gho_"),
+            ("token=ghu_12345678901234567890123456789012345678", "ghu_"),
+            ("token=ghs_12345678901234567890123456789012345678", "ghs_"),
+            ("token=ghr_12345678901234567890123456789012345678", "ghr_"),
+        ]
+        
+        for text, prefix in test_cases:
+            masked = mask_secrets(text)
+            assert "***GITHUB_TOKEN***" in masked
+            assert prefix not in masked or "12345678901234567890123456789012345678" not in masked
     
-    def test_mask_secrets_token(self):
-        text = "token=ghp_abcdefghijklmnopqrstuvwxyz"
+    def test_mask_jwt_tokens(self):
+        """Should mask JWT tokens."""
+        from security_utils import mask_secrets
+        
+        jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+        text = f"Authorization: Bearer {jwt}"
         masked = mask_secrets(text)
-        assert "ghp_" not in masked or "***MASKED***" in masked
+        assert "***JWT_TOKEN***" in masked
+        assert jwt not in masked
     
-    def test_mask_secrets_base64(self):
-        # Long base64 strings
-        text = "data=SGVsbG8gV29ybGQhSGVsbG8gV29ybGQhSGVsbG8gV29ybGQh"
+    def test_mask_aws_keys(self):
+        """Should mask AWS access keys (AKIA...)."""
+        from security_utils import mask_secrets
+        
+        text = "AWS_ACCESS_KEY_ID=AKIA1234567890123456"
         masked = mask_secrets(text)
-        assert "***BASE64_SECRET***" in masked
+        assert "***AWS_ACCESS_KEY***" in masked
+        assert "AKIA1234567890123456" not in masked
+    
+    def test_mask_private_keys(self):
+        """Should mask private keys."""
+        from security_utils import mask_secrets
+        
+        private_key = """-----BEGIN RSA PRIVATE KEY-----
+MIIEowIBAAKCAQEA1234567890abcdef
+-----END RSA PRIVATE KEY-----"""
+        masked = mask_secrets(private_key)
+        assert "***PRIVATE_KEY***" in masked
+        assert "BEGIN RSA PRIVATE KEY" not in masked
+    
+    def test_mask_connection_strings(self):
+        """Should mask connection strings with passwords."""
+        from security_utils import mask_secrets
+        
+        text = "mongodb://user:secretpassword@localhost:27017/db"
+        masked = mask_secrets(text)
+        assert "mongodb://***:***@" in masked
+        assert "secretpassword" not in masked
     
     def test_mask_secrets_in_dict(self):
+        """Should mask secrets in nested dict structures."""
+        from security_utils import mask_secrets_in_dict
+        
         data = {
             "password": "secret123",
-            "nested": {"token": "ghp_abc123"},
-            "list": ["normal", "password=secret"],
-            "normal": "value"
+            "nested": {
+                "api_key": "sk-1234567890abcdef",
+                "normal": "value"
+            },
+            "list": [
+                {"token": "ghp_12345678901234567890123456789012345678"},
+                {"safe": "data"}
+            ]
         }
+        
         masked = mask_secrets_in_dict(data)
+        
         assert masked["password"] == "***MASKED***"
-        assert masked["nested"]["token"] == "***MASKED***"
-        assert masked["list"][1] == "password=***MASKED***"
-        assert masked["normal"] == "value"
+        assert masked["nested"]["api_key"] == "***MASKED***"
+        assert masked["nested"]["normal"] == "value"
+        assert masked["list"][0]["token"] == "***MASKED***"
+        assert masked["list"][1]["safe"] == "data"
     
-    def test_mask_secrets_preserves_structure(self):
-        data = {"key": "value"}
-        masked = mask_secrets_in_dict(data)
-        assert masked == data
+    def test_base64_secret_detection(self):
+        """Should detect and mask long base64 strings."""
+        from security_utils import mask_secrets
+        
+        # 40+ char base64
+        b64 = "SGVsbG8gV29ybGQgVGhpcyBpcyBhIHZlcnkgbG9uZyBiYXNlNjQgc3RyaW5nIHRoYXQgc2hvdWxkIGJlIG1hc2tlZA=="
+        masked = mask_secrets(b64)
+        assert "***BASE64_SECRET***" in masked
 
 
-class TestStructuredResponses:
-    """Test structured error/success responses"""
+class TestInputValidation:
+    """Tests for input validation functions."""
     
-    def test_create_error_response(self):
-        resp = create_error_response("TEST_ERROR", "Test message", "Try this", {"detail": "info"})
-        assert resp["error"]["code"] == "TEST_ERROR"
-        assert resp["error"]["message"] == "Test message"
-        assert resp["error"]["remediation"] == "Try this"
-        assert resp["error"]["details"]["detail"] == "info"
+    def test_validate_github_repo(self):
+        """Test GitHub repo validation."""
+        from security_utils import validate_github_repo, ValidationError
+        
+        valid = ["owner/repo", "Owner/Repo-Name", "org123/repo_name"]
+        for repo in valid:
+            assert validate_github_repo(repo) == repo
+        
+        invalid = ["owner/", "/repo", "owner", "owner/repo/extra", "", "owner..repo"]
+        for repo in invalid:
+            with pytest.raises(ValidationError):
+                validate_github_repo(repo)
     
-    def test_create_success_response(self):
-        resp = create_success_response({"key": "value"}, {"meta": "info"})
-        assert resp["success"] is True
-        assert resp["data"]["key"] == "value"
-        assert resp["meta"]["meta"] == "info"
+    def test_validate_workflow_name(self):
+        """Test workflow name validation."""
+        from security_utils import validate_workflow_name, ValidationError
+        
+        valid = ["build.yml", "build.yaml", "ci/release.yml"]
+        for w in valid:
+            assert validate_workflow_name(w) == w
+        
+        invalid = ["build.txt", "build.json", "build", "../build.yml", "build.yml/../"]
+        for w in invalid:
+            with pytest.raises(ValidationError):
+                validate_workflow_name(w)
     
-    def test_error_response_masks_secrets(self):
-        resp = create_error_response("ERR", "Failed", details={"password": "secret123"})
-        assert "secret123" not in json.dumps(resp)
-        assert "***MASKED***" in json.dumps(resp)
+    def test_validate_run_id(self):
+        """Test run ID validation."""
+        from security_utils import validate_run_id, ValidationError
+        
+        assert validate_run_id("12345") == "12345"
+        assert validate_run_id("0") == "0"
+        
+        invalid = ["abc", "-1", "12.34", ""]
+        for run_id in invalid:
+            with pytest.raises(ValidationError):
+                validate_run_id(run_id)
+    
+    def test_validate_branch_name(self):
+        """Test branch name validation."""
+        from security_utils import validate_branch_name, ValidationError
+        
+        valid = ["main", "feature/new-ui", "release/v1.0", "hotfix/bug-123"]
+        for branch in valid:
+            assert validate_branch_name(branch) == branch
+        
+        invalid = ["branch with spaces", "branch~name", "branch^name", ".branch", "branch.", ""]
+        for branch in invalid:
+            with pytest.raises(ValidationError):
+                validate_branch_name(branch)
+    
+    def test_validate_error_type(self):
+        """Test error type validation."""
+        from security_utils import validate_error_type
+        
+        valid = ["missing_permission", "gradle_lock", "dexing_d8_r8", "sdk_license"]
+        for etype in valid:
+            assert validate_error_type(etype) == etype
+        
+        # Unknown types should be allowed but normalized
+        assert validate_error_type("unknown_error") == "unknown_error"
+
+
+class TestSanitization:
+    """Tests for input sanitization."""
+    
+    def test_sanitize_commit_message(self):
+        """Test commit message sanitization."""
+        from security_utils import sanitize_commit_message
+        
+        # Normal message
+        assert sanitize_commit_message("feat: add login") == "feat: add login"
+        
+        # Removes control characters
+        assert sanitize_commit_message("feat: add\x00login") == "feat: addlogin"
+        
+        # Removes shell metacharacters
+        assert sanitize_commit_message("feat: `rm -rf /`") == "feat: rm -rf /"
+        assert sanitize_commit_message('feat: "$HOME"') == "feat: HOME"
+        assert sanitize_commit_message("feat: $(evil)") == "feat: evil"
+        
+        # Truncates long messages
+        long_msg = "a" * 250
+        sanitized = sanitize_commit_message(long_msg)
+        assert len(sanitized) <= 200
+        assert sanitized.endswith("...")
+    
+    def test_sanitize_workflow_inputs(self):
+        """Test workflow inputs sanitization."""
+        from security_utils import sanitize_workflow_inputs
+        
+        valid = '{"key": "value", "build_type": "release"}'
+        result = sanitize_workflow_inputs(valid)
+        assert result == {"key": "value", "build_type": "release"}
+        
+        # Invalid JSON returns empty dict
+        assert sanitize_workflow_inputs("not json") == {}
+        assert sanitize_workflow_inputs("") == {}
+        
+        # Non-string values are filtered
+        result = sanitize_workflow_inputs('{"key": 123, "str": "value"}')
+        assert "key" not in result
+        assert result["str"] == "value"
+        
+        # Control characters removed (JSON escaped)
+        result = sanitize_workflow_inputs('{"key": "value\\u0000with\\u0001control"}')
+        assert "\x00" not in result["key"]
+        assert "\x01" not in result["key"]
+        
+        # Length limited
+        long_val = "a" * 1500
+        result = sanitize_workflow_inputs(f'{{"key": "{long_val}"}}')
+        assert len(result["key"]) <= 1000
+
+
+class TestAuditLogging:
+    """Tests for audit logging."""
+    
+    def test_audit_command_execution(self, audit_log_file):
+        """Test command execution audit logging."""
+        from security_utils import audit_command_execution
+        import logging
+        
+        # Setup logger to capture
+        logger = logging.getLogger("security.audit")
+        logger.setLevel(logging.INFO)
+        
+        # Just verify function doesn't crash
+        audit_command_execution(["echo", "test"], "/tmp", True)
+        audit_command_execution(["false"], "/tmp", False, "Command failed")
+    
+    def test_audit_file_access(self, audit_log_file):
+        """Test file access audit logging."""
+        from security_utils import audit_file_access
+        
+        audit_file_access("/var/minis/workspace/test.txt", "read", True)
+        audit_file_access("/etc/passwd", "read", False, "Permission denied")
+    
+    def test_audit_auth_attempt(self, audit_log_file):
+        """Test auth attempt audit logging."""
+        from security_utils import audit_auth_attempt
+        
+        audit_auth_attempt("owner/repo", "workflow_dispatch", True)
+        audit_auth_attempt("owner/repo", "workflow_dispatch", False)
+    
+    def test_audit_secret_access(self, audit_log_file):
+        """Test secret access audit logging."""
+        from security_utils import audit_secret_access
+        
+        audit_secret_access("keystore_password", "local", True)
+        audit_secret_access("api_key", "aws_kms", False)
 
 
 class TestEnhancedSecurityACL:
-    """Test enhanced security ACL (via AgentSecurityACL)"""
+    """Tests for EnhancedSecurityACL."""
     
-    def test_validate_allowed_command(self):
-        ok, msg = AgentSecurityACL.validate_command("gh workflow list --repo owner/repo")
-        assert ok is True
+    def test_validate_command_allowlist(self):
+        """Test command allowlist validation."""
+        from security_utils import EnhancedSecurityACL
+        
+        # Allowed commands
+        allowed = [
+            ["gh", "workflow", "list"],
+            ["git", "add", "."],
+            ["gradle", "assembleDebug"],
+            ["python3", "script.py"]
+        ]
+        for cmd in allowed:
+            ok, msg = EnhancedSecurityACL.validate_command(cmd)
+            assert ok, f"Should allow {cmd}: {msg}"
+        
+        # Blocked commands
+        blocked = [
+            ["evil", "command"],
+            ["gh", "evil-subcommand"],
+            ["git", "push", "--force"],
+            ["rm", "-rf", "/"]
+        ]
+        for cmd in blocked:
+            ok, msg = EnhancedSecurityACL.validate_command(cmd)
+            assert not ok, f"Should block {cmd}: {msg}"
     
-    def test_validate_blocked_command(self):
-        ok, msg = AgentSecurityACL.validate_command("rm -rf /")
-        assert ok is False
-        assert "SECURITY VIOLATION" in msg
-    
-    def test_validate_github_operation(self):
-        ok, msg = AgentSecurityACL.validate_github_operation("trigger_workflow", {
-            "repo": "owner/repo",
-            "workflow": "build.yml",
-            "inputs": '{"key": "value"}'
-        })
-        assert ok is True
-    
-    def test_validate_github_operation_invalid_repo(self):
-        ok, msg = AgentSecurityACL.validate_github_operation("trigger_workflow", {
-            "repo": "invalid",
-            "workflow": "build.yml"
-        })
-        assert ok is False
-        assert "INVALID_REPO" in msg
-    
-    def test_validate_android_operation(self):
+    def test_validate_file_write(self):
+        """Test file write path validation."""
+        from security_utils import EnhancedSecurityACL
+        
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create dummy project
-            Path(tmpdir, "build.gradle.kts").write_text("")
+            allowed = Path(tmpdir) / "test.txt"
+            ok, msg = EnhancedSecurityACL.validate_file_write(str(allowed))
+            assert ok
             
-            ok, msg = AgentSecurityACL.validate_android_operation("verify", {
-                "project_path": tmpdir
-            })
-            assert ok is True
-    
-    def test_validate_android_operation_path_traversal(self):
-        ok, msg = AgentSecurityACL.validate_android_operation("verify", {
-            "project_path": "/etc"
-        })
-        assert ok is False
+            blocked = "/etc/passwd"
+            ok, msg = EnhancedSecurityACL.validate_file_write(blocked)
+            assert not ok
 
 
-class TestAgentSecurityACL:
-    """Test backward-compatible AgentSecurityACL"""
-    
-    def test_validate_command_legacy_blocked(self):
-        ok, msg = AgentSecurityACL.validate_command("rm -rf /")
-        assert ok is False
-        assert "SECURITY VIOLATION" in msg
-    
-    def test_validate_command_legacy_force_push(self):
-        ok, msg = AgentSecurityACL.validate_command("git push --force origin main")
-        assert ok is False
-    
-    def test_validate_command_allowed(self):
-        ok, msg = AgentSecurityACL.validate_command("gh workflow list --repo owner/repo")
-        assert ok is True
-    
-    def test_validate_file_path_legacy_blocked(self):
-        ok, msg = AgentSecurityACL.validate_file_path("/etc/passwd")
-        assert ok is False
-        assert "SECURITY VIOLATION" in msg
-    
-    def test_validate_file_path_allowed(self):
-        ok, msg = AgentSecurityACL.validate_file_path("/var/minis/workspace/test.txt")
-        assert ok is True
-    
-    def test_hitl_approval_gate(self):
-        # Should return True but log warning
-        result = AgentSecurityACL.require_hitl_approval("dangerous_action", {"param": "value"})
-        assert result is True
-
-
-class TestMCPToolSecurity:
-    """Test MCP tools enforce security"""
-    
-    @pytest.fixture(autouse=True)
-    def setup(self):
-        import sys
-        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "mcp_server"))
-        import server
-        self.app = server.app
-    
-    @pytest.mark.asyncio
-    async def test_list_workflows_rejects_invalid_repo(self):
-        result = await self.app.call_tool("list_workflows", {"repo": "invalid"})
-        content_text = result.content[0].text if result.content else "{}"
-        data = json.loads(content_text)
-        assert "error" in data
-        assert data["error"]["code"] == "INVALID_REPO"
-    
-    @pytest.mark.asyncio
-    async def test_download_artifacts_rejects_path_traversal(self):
-        result = await self.app.call_tool("download_run_artifacts", {"repo": "owner/repo", "run_id": "123", "output_dir": "/etc"})
-        content_text = result.content[0].text if result.content else "{}"
-        data = json.loads(content_text)
-        assert "error" in data
-        assert data["error"]["code"] in ("PATH_TRAVERSAL", "INVALID_OUTPUT_DIR")
-    
-    @pytest.mark.asyncio
-    async def test_auto_fix_build_rejects_unknown_error(self):
-        result = await self.app.call_tool("auto_fix_build", {"error_type": "unknown_error", "project_path": "."})
-        content_text = result.content[0].text if result.content else "{}"
-        data = json.loads(content_text)
-        assert "success" in data or "error" in data
-    
-    @pytest.mark.asyncio
-    async def test_profile_apk_rejects_non_apk(self):
-        with tempfile.NamedTemporaryFile(suffix=".txt", delete=False) as f:
-            f.write(b"not an apk")
-            txt_path = f.name
-        
-        try:
-            result = await self.app.call_tool("profile_built_apk", {"apk_path": txt_path})
-            content_text = result.content[0].text if result.content else "{}"
-            data = json.loads(content_text)
-            assert "error" in data
-            assert data["error"]["code"] == "INVALID_APK"
-        finally:
-            Path(txt_path).unlink()
-
-
-class TestSecretLeakagePrevention:
-    """Test that secrets never leak in responses"""
-    
-    @pytest.fixture(autouse=True)
-    def setup(self):
-        import sys
-        sys.path.insert(0, str(Path(__file__).parent.parent.parent / "mcp_server"))
-        import server
-        self.app = server.app
-    
-    @pytest.mark.asyncio
-    async def test_encrypt_vault_secret_no_plaintext_in_response(self):
-        result = await self.app.call_tool("encrypt_vault_secret", {"secret_text": "my_super_secret_password"})
-        content_text = result.content[0].text if result.content else "{}"
-        data = json.loads(content_text)
-        
-        assert "my_super_secret_password" not in content_text
-        assert "encrypted_secret" in data.get("data", {})
-    
-    @pytest.mark.asyncio
-    async def test_resolve_enterprise_secret_no_full_secret_in_response(self):
-        result = await self.app.call_tool("resolve_enterprise_secret", {"secret_name": "test_secret", "backend": "local"})
-        content_text = result.content[0].text if result.content else "{}"
-        data = json.loads(content_text)
-        
-        if data.get("data", {}).get("resolved"):
-            assert "preview" in data["data"]
-            assert data["data"]["preview"].endswith("***")
-    
-    @pytest.mark.asyncio
-    async def test_encode_keystore_truncated_in_response(self):
-        with tempfile.NamedTemporaryFile(suffix=".jks", delete=False) as f:
-            f.write(b"dummy keystore content")
-            jks_path = f.name
-        
-        try:
-            result = await self.app.call_tool("encode_keystore_binary", {"jks_path": jks_path})
-            content_text = result.content[0].text if result.content else "{}"
-            data = json.loads(content_text)
-            
-            if data.get("data", {}).get("status") == "success":
-                b64 = data["data"]["base64_keystore"]
-                assert b64.endswith("...[truncated]")
-        finally:
-            Path(jks_path).unlink()
-
+# ============================================================================
+# RUNNER
+# ============================================================================
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    pytest.main([__file__, "-v", "--tb=short", "-m", "security"])

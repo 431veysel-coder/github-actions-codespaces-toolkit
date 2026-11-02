@@ -114,9 +114,9 @@ def validate_workflow_name(workflow: str) -> str:
     workflow = workflow.strip()
     if not workflow.endswith((".yml", ".yaml")):
         raise ValidationError("INVALID_WORKFLOW", "Workflow must be a .yml or .yaml file")
-    # Prevent path traversal in workflow name
-    if ".." in workflow or "/" in workflow or "\\" in workflow:
-        raise ValidationError("INVALID_WORKFLOW", "Workflow name cannot contain path separators")
+    # Prevent path traversal in workflow name (allow subdirectories but no ..)
+    if ".." in workflow or workflow.startswith("/") or workflow.startswith("\\"):
+        raise ValidationError("INVALID_WORKFLOW", "Workflow name cannot contain path traversal")
     return workflow
 
 def validate_run_id(run_id: str) -> str:
@@ -235,8 +235,16 @@ def sanitize_commit_message(message: str) -> str:
     if len(sanitized) > 200:
         sanitized = sanitized[:197] + "..."
     # Prevent command injection via git commit -m
-    # Ensure no shell metacharacters that could be exploited
-    sanitized = sanitized.replace("'", "").replace('"', "").replace("`", "").replace("$", "")
+    # Remove shell metacharacters that could be exploited
+    sanitized = sanitized.replace("'", "").replace('"', "").replace("`", "")
+    # Neutralize $() and ${} command substitution - remove $ and () but keep content
+    sanitized = re.sub(r'\$\(([^)]*)\)', r'\1', sanitized)
+    sanitized = re.sub(r'\$\{([^}]*)\}', r'\1', sanitized)
+    # Replace $VAR and ${VAR} variable references with just the variable name (remove $)
+    sanitized = re.sub(r'\$([A-Za-z_][A-Za-z0-9_]*)', r'\1', sanitized)
+    sanitized = re.sub(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}', r'\1', sanitized)
+    # Remove standalone $ at end of string or before whitespace
+    sanitized = re.sub(r'\$(?=\s|$)', '', sanitized)
     return sanitized or "fix(autofix): automated patch"
 
 def sanitize_workflow_inputs(inputs: str) -> Dict[str, str]:
@@ -345,22 +353,19 @@ def safe_git_command(args: List[str], cwd: str) -> subprocess.CompletedProcess:
 # ============================================================================
 
 SECRET_PATTERNS = [
-    # Key=value patterns
-    (re.compile(r"(?i)(password|secret|token|key|auth)(\s*[:=]\s*)([^\s]+)"), r"\1\2***MASKED***"),
-    (re.compile(r"(?i)(github_token|gh_token|pat|bearer)(\s*[:=]\s*)([^\s]+)"), r"\1\2***MASKED***"),
-    (re.compile(r"(?i)(aws_access_key_id|aws_secret_access_key|aws_session_token)(\s*[:=]\s*)([^\s]+)"), r"\1\2***MASKED***"),
-    (re.compile(r"(?i)(api[_-]?key|apikey|client[_-]?secret|private[_-]?key)(\s*[:=]\s*)([^\s]+)"), r"\1\2***MASKED***"),
-    
-    # JWT tokens (eyJ...)
+    # JWT tokens (eyJ...) - MUST BE FIRST (most specific)
     (re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+"), "***JWT_TOKEN***"),
     
-    # GitHub tokens (ghp_, gho_, ghu_, ghs_, ghr_)
+    # GitHub tokens in key=value format - MUST BE BEFORE generic token patterns
+    # Match key=value where value is a GitHub token
+    (re.compile(r"(?i)([^\s=:]+)\s*[:=]\s*(gh[pousr]_[A-Za-z0-9]{36,})"), r"\1=***GITHUB_TOKEN***"),
+    # Match key=value where value is an AWS key
+    (re.compile(r"(?i)([^\s=:]+)\s*[:=]\s*(AKIA[0-9A-Z]{16})"), r"\1=***AWS_ACCESS_KEY***"),
+    
+    # GitHub tokens (ghp_, gho_, ghu_, ghs_, ghr_) - standalone
     (re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}"), "***GITHUB_TOKEN***"),
     
-    # Generic long base64-like strings (potential secrets)
-    (re.compile(r"([A-Za-z0-9+/]{40,}={0,2})"), "***BASE64_SECRET***"),
-    
-    # AWS keys (AKIA...)
+    # AWS keys (AKIA...) - standalone
     (re.compile(r"AKIA[0-9A-Z]{16}"), "***AWS_ACCESS_KEY***"),
     
     # Private keys (-----BEGIN ... PRIVATE KEY-----)
@@ -368,6 +373,17 @@ SECRET_PATTERNS = [
     
     # Connection strings with passwords
     (re.compile(r"(?i)(mongodb|postgres|mysql|redis)://[^:]+:([^@]+)@"), r"\1://***:***@"),
+    
+    # Key=value patterns with specific secret keywords
+    # Generic pattern - skip if value already contains *** (already masked)
+    (re.compile(r"(?i)(password|secret|token|key|auth)(\s*[:=]\s*)((?:(?!\*\*\*).)+)"), r"\1\2***MASKED***"),
+    (re.compile(r"(?i)(github_token|gh_token|pat|bearer)(\s*[:=]\s*)([^\s]+)"), r"\1\2***MASKED***"),
+    # AWS key patterns - skip if value already contains *** (already masked)
+    (re.compile(r"(?i)(aws_access_key_id|aws_secret_access_key|aws_session_token)(\s*[:=]\s*)((?:(?!\*\*\*).)+)"), r"\1\2***MASKED***"),
+    (re.compile(r"(?i)(api[_-]?key|apikey|client[_-]?secret|private[_-]?key)(\s*[:=]\s*)([^\s]+)"), r"\1\2***MASKED***"),
+    
+    # Generic long base64-like strings (potential secrets) - LAST
+    (re.compile(r"([A-Za-z0-9+/]{40,}={0,2})"), "***BASE64_SECRET***"),
 ]
 
 def mask_secrets(text: str) -> str:
@@ -556,7 +572,7 @@ class EnhancedSecurityACL:
     ALLOWED_COMMANDS = {
         "gh": ["workflow", "run", "list", "view", "download", "codespace", "auth"],
         "git": ["add", "commit", "push", "pull", "fetch", "status", "log", "diff", "branch", "checkout"],
-        "gradle": ["assemble", "build", "clean", "test", "dependencies"],
+        "gradle": ["assemble", "assembleDebug", "assembleRelease", "build", "clean", "test", "dependencies", "tasks", "help"],
         "python3": [],  # Allow python3 with any args (scripts we control)
     }
     
@@ -574,7 +590,19 @@ class EnhancedSecurityACL:
         allowed_subs = cls.ALLOWED_COMMANDS[base_cmd]
         if allowed_subs and len(command) > 1:
             sub_cmd = command[1]
-            if sub_cmd not in allowed_subs:
+            # Check exact match or prefix match for gradle tasks
+            if base_cmd == "gradle":
+                # Allow any task starting with allowed prefixes
+                matched = any(sub_cmd.startswith(allowed) for allowed in allowed_subs)
+                if not matched:
+                    return False, f"Gradle task not allowed: '{sub_cmd}'"
+            elif base_cmd == "git" and sub_cmd == "push":
+                # Special check for git push --force
+                if "--force" in command or "-f" in command:
+                    return False, "Git push --force is not allowed"
+                if sub_cmd not in allowed_subs:
+                    return False, f"Git subcommand not allowed: '{sub_cmd}'"
+            elif sub_cmd not in allowed_subs:
                 return False, f"Subcommand not allowed for {base_cmd}: '{sub_cmd}'"
         
         return True, "Command approved"
