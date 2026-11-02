@@ -1,9 +1,7 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## [v1.0.0] - 2026-11-02
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [v2.6.0] - 2026-11-02
 
@@ -83,3 +81,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Multi-Provider Support**: GitLab CI, Azure DevOps implementations
 - **CLI Interface**: `minis-gh-toolkit` entry point with dry-run, verbose, shell completion
 - **Observability**: Structured JSON logging, OpenTelemetry traces, Prometheus metrics, health check endpoint
+## [2.7.0] - 2026-11-02
+### Added
+- **Minis Nexus Android Pipeline (`apps/minis-nexus/`)**: Isolated Android Gradle setup with quota-optimized `gradle.properties`.
+- **Quota-Protected Workflow (`.github/workflows/nexus-android-build.yml`)**: Aggressive Gradle caching (`actions/cache@v3`), path filtering, and timeout limits (25m) to protect GitHub Actions minutes quota.
+- **Nexus Builder CLI (`scripts/nexus_builder.py`)**: Local pre-flight checker, workflow trigger, and status monitor.
+- **Architecture Strategy Docs (`NEXUS_QUOTA_STRATEGY.md`)**: Comprehensive blueprint for bypassing GitHub limits and implementing hybrid execution.
