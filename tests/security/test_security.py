@@ -30,11 +30,14 @@ class TestPathTraversal:
             validate_file_path("/etc/passwd")
 
     def test_validate_file_path_blocks_parent_traversal(self):
-        """Should block directory traversal with ../."""
-        from security_utils import PathTraversalError, validate_file_path
+        """Should block directory traversal that escapes the workspace."""
+        from security_utils import WORKSPACE_ROOT, PathTraversalError, validate_file_path
 
+        # Deterministic: derive an out-of-workspace path from the live workspace
+        # root, so the test does not depend on the current working directory.
+        escape_attempt = str(WORKSPACE_ROOT / ".." / ".." / "etc" / "passwd")
         with pytest.raises(PathTraversalError):
-            validate_file_path("../../../etc/passwd")
+            validate_file_path(escape_attempt)
 
     def test_validate_file_path_blocks_absolute_system_paths(self):
         """Should block absolute system paths."""

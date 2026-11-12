@@ -335,7 +335,9 @@ Licenses have not been accepted
             zf.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\n")
             zf.writestr("classes.dex", b"fake dex")
 
-        # Sign
+        # Sign (requires apksigner from Android build-tools; JDK alone is not enough)
+        if not shutil.which("apksigner"):
+            pytest.skip("apksigner not installed (Android build-tools) — signing step skipped")
         success, msg = manager.sign_apk(
             apk_path=str(apk_path), alias="test-key", storepass="StorePass123", keypass="KeyPass123"
         )
