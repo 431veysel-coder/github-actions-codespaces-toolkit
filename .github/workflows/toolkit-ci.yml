@@ -97,12 +97,22 @@ jobs:
                    .github/PULL_REQUEST_TEMPLATE.md; do
             test -f "$f" && echo "✓ $f" || { echo "✗ missing $f"; exit 1; }
           done
-      - name: No legacy Nexus references in code or docs
+      - name: No legacy Nexus scaffolding
         run: |
-          # CHANGELOG.md is excluded on purpose: it is the historical record of
-          # what was removed and must keep naming the old scaffolding.
-          if grep -rIl --exclude-dir=.git --exclude=CHANGELOG.md -i "minis-nexus\|nexus_builder\|NEXUS_ULTRA" . ; then
-            echo "::error::legacy Nexus scaffolding references remain"
+          # 1) the old workflow file must be gone
+          if [ -f .github/workflows/nexus-android-build.yml ]; then
+            echo "::error::legacy nexus-android-build.yml still present"
+            exit 1
+          fi
+          # 2) no leftover module/app references in code or docs.
+          #    CHANGELOG.md is excluded on purpose: it is the historical record
+          #    of what was removed and must keep naming the old scaffolding.
+          HITS=$(grep -rIl -i -e "nexus_builder" -e "NEXUS_ULTRA" -e "minis-nexus" \
+                    scripts/ mcp_server/ tests/ templates/ \
+                    README.md SKILL.md ANDROID_PIPELINE.md DESIGN_LAYOUT.md 2>/dev/null || true)
+          if [ -n "$HITS" ]; then
+            echo "::error::legacy Nexus references remain:"
+            echo "$HITS"
             exit 1
           fi
           echo "✓ no legacy Nexus references"

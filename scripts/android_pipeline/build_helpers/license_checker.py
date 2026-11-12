@@ -483,7 +483,7 @@ class LicenseChecker:
 
 ## Policy Violations
 
-{"".join(f"- ❌ {v}\n" for v in report['policy_violations']) if report['policy_violations'] else "None"}
+{"".join(f"- ❌ {v}" + chr(10) for v in report['policy_violations']) if report['policy_violations'] else "None"}
 """
         Path(output_path).write_text(md)
 
