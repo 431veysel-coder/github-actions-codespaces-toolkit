@@ -49,8 +49,10 @@ jobs:
         run: black --check --diff .
       - name: isort
         run: isort --check-only --diff .
+      - name: compileall (Python 3.11 syntax gate)
+        run: python3 -m compileall -q scripts mcp_server tests
       - name: flake8
-        run: flake8 .
+        run: flake8 -j 1 .
 
   validate-mcp:
     name: Validate MCP Server

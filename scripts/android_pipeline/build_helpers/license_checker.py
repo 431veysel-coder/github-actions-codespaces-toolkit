@@ -456,35 +456,41 @@ class LicenseChecker:
         Path(output_path).write_text(html)
 
     def _generate_markdown_report(self, report: Dict, output_path: str):
-        """Generate Markdown report"""
-        md = f"""# License Compliance Report
+        """Generate Markdown report.
 
-**Project:** {report['project_path']}  
-**Total Dependencies:** {report['total_dependencies']}  
-**Status:** {'✅ COMPLIANT' if report['compliant'] else '❌ NON-COMPLIANT'}
+        Built with pre-computed row strings instead of nested f-strings, which
+        Python 3.11 rejects (same-quote nesting / backslashes inside f-strings).
+        """
+        license_rows = "".join(f"| {k} | {v} |" + "\n" for k, v in report["license_distribution"].items())
+        risk_rows = "".join(f"| {k} | {v} |" + "\n" for k, v in report["risk_distribution"].items())
+        dep_rows = "".join(
+            f"| {d['name']} | {d['version']} | {d['ecosystem']} | {', '.join(d['declared_licenses'])} | "
+            f"{d['risk_level']} | {'; '.join(d['issues'])} |" + "\n"
+            for d in report["dependencies"]
+        )
+        violations = "\n".join(f"- \u274c {v}" for v in report["policy_violations"]) or "None"
+        status = "\u2705 COMPLIANT" if report["compliant"] else "\u274c NON-COMPLIANT"
 
-## License Distribution
-
-| License | Count |
-|---------|-------|
-{"".join(f"| {k} | {v} |\n" for k, v in report['license_distribution'].items())}
-
-## Risk Distribution
-
-| Risk Level | Count |
-|------------|-------|
-{"".join(f"| {k} | {v} |\n" for k, v in report['risk_distribution'].items())}
-
-## Dependencies
-
-| Name | Version | Ecosystem | Licenses | Risk | Issues |
-|------|---------|-----------|----------|------|--------|
-{"".join(f"| {d['name']} | {d['version']} | {d['ecosystem']} | {', '.join(d['declared_licenses'])} | {d['risk_level']} | {'; '.join(d['issues'])} |" + chr(10) for d in report['dependencies'])}
-
-## Policy Violations
-
-{"".join(f"- ❌ {v}" + chr(10) for v in report['policy_violations']) if report['policy_violations'] else "None"}
-"""
+        md = (
+            "# License Compliance Report\n\n"
+            f"**Project:** {report['project_path']}  \n"
+            f"**Total Dependencies:** {report['total_dependencies']}  \n"
+            f"**Status:** {status}\n\n"
+            "## License Distribution\n\n"
+            "| License | Count |\n"
+            "|---------|-------|\n"
+            f"{license_rows}\n"
+            "## Risk Distribution\n\n"
+            "| Risk Level | Count |\n"
+            "|------------|-------|\n"
+            f"{risk_rows}\n"
+            "## Dependencies\n\n"
+            "| Name | Version | Ecosystem | Licenses | Risk | Issues |\n"
+            "|------|---------|-----------|----------|------|--------|\n"
+            f"{dep_rows}\n"
+            "## Policy Violations\n\n"
+            f"{violations}\n"
+        )
         Path(output_path).write_text(md)
 
 

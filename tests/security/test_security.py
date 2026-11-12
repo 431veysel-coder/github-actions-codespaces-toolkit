@@ -33,9 +33,10 @@ class TestPathTraversal:
         """Should block directory traversal that escapes the workspace."""
         from security_utils import WORKSPACE_ROOT, PathTraversalError, validate_file_path
 
-        # Deterministic: derive an out-of-workspace path from the live workspace
-        # root, so the test does not depend on the current working directory.
-        escape_attempt = str(WORKSPACE_ROOT / ".." / ".." / "etc" / "passwd")
+        # Deterministic: climb far above any allowed root (workspace, home, tmp)
+        # so the normalised path is guaranteed to be outside the allowlist,
+        # regardless of where the workspace lives on this machine.
+        escape_attempt = str(WORKSPACE_ROOT / ".." / ".." / ".." / ".." / ".." / ".." / "etc" / "passwd")
         with pytest.raises(PathTraversalError):
             validate_file_path(escape_attempt)
 
