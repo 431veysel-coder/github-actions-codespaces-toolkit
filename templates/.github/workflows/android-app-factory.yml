@@ -32,21 +32,49 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        run: |
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "Using Android SDK at $SDK"
+          test -d "$SDK" || { echo "::error::Android SDK not found"; exit 1; }
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "sdk.dir=$SDK" > local.properties
+          # accept licences non-interactively (preview-channel prompts otherwise abort)
+          SDKMANAGER=$(find "$SDK/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -1)
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          fi
+          echo "SDK ready"
 
       - name: Setup Gradle (with cache — quota protection)
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-version: wrapper
+          gradle-version: "8.7"
           cache-read-only: false
 
-      - name: Make wrapper executable
-        run: chmod +x gradlew
+      - name: Bootstrap Gradle wrapper if missing
+        run: |
+          if [ ! -f gradlew ]; then
+            echo "gradlew missing — generating wrapper in a clean temp dir"
+            # Running `gradle wrapper` inside the project evaluates its build
+            # scripts (which need AGP resolution); a bare directory avoids that.
+            TMP=$(mktemp -d)
+            (
+              cd "$TMP"
+              printf 'rootProject.name = "wrappertmp"\n' > settings.gradle
+              gradle wrapper --gradle-version 8.7 --distribution-type bin -q
+            )
+            cp -r "$TMP/gradlew" "$TMP/gradlew.bat" "$TMP/gradle" . 2>/dev/null || true
+            rm -rf "$TMP"
+          fi
+          chmod +x gradlew
+          ./gradlew --version
 
       - name: Pre-flight (Level 1 verification)
         run: |
-          ./gradlew --version
           test -f app/build.gradle.kts || test -f app/build.gradle || { echo "::error::app module gradle file missing"; exit 1; }
+          test -f settings.gradle.kts || test -f settings.gradle || { echo "::error::settings.gradle missing"; exit 1; }
+          echo "Project structure OK"
 
       - name: Lint
         run: ./gradlew lint --stacktrace || echo "::warning::lint issues found (non-blocking)"

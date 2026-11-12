@@ -69,6 +69,47 @@ class TestProjectScaffolder:
         assert "android.intent.action.MAIN" in manifest
         assert "android.intent.category.LAUNCHER" in manifest
 
+    def test_no_unescaped_template_braces(self, tmp_path):
+        """Regression: non-formatted templates must not leak '{{' / '}}' into files.
+
+        ROOT_BUILD_GRADLE and PROGUARD_RULES are written verbatim (no .format()),
+        so their braces must be single. A double brace breaks the Gradle build
+        with 'Plugin [id: com.android.application] was not found'.
+        """
+        ok, _ = AndroidProjectScaffolder().scaffold(tmp_path / "br", "com.a.br")
+        assert ok
+        offenders = [
+            str(p.relative_to(tmp_path))
+            for p in (tmp_path / "br").rglob("*")
+            if p.is_file()
+            and p.suffix in (".kts", ".gradle", ".pro", ".xml", ".properties")
+            and ("{{" in p.read_text(errors="ignore") or "}}" in p.read_text(errors="ignore"))
+        ]
+        assert offenders == [], f"unescaped template braces in: {offenders}"
+
+    def test_theme_parent_matches_dependencies(self, tmp_path):
+        """Compose mode must not reference Material3 theme (no material dependency)."""
+        AndroidProjectScaffolder().scaffold(tmp_path / "thc", "com.a.thc", ui_mode="compose")
+        compose_theme = (tmp_path / "thc/app/src/main/res/values/themes.xml").read_text()
+        deps = (tmp_path / "thc/app/build.gradle.kts").read_text()
+        if "Theme.Material3" in compose_theme:
+            assert (
+                "com.google.android.material:material" in deps
+            ), "Material3 theme used but material dependency missing -> AAPT link failure"
+
+        AndroidProjectScaffolder().scaffold(tmp_path / "thx", "com.a.thx", ui_mode="xml")
+        xml_theme = (tmp_path / "thx/app/src/main/res/values/themes.xml").read_text()
+        xml_deps = (tmp_path / "thx/app/build.gradle.kts").read_text()
+        if "Theme.Material3" in xml_theme:
+            assert "com.google.android.material:material" in xml_deps
+
+    def test_root_gradle_declares_agp_version(self, tmp_path):
+        """Root build must pin AGP + Kotlin plugin versions for the app module."""
+        ok, _ = AndroidProjectScaffolder().scaffold(tmp_path / "agp", "com.a.agp")
+        root = (tmp_path / "agp/build.gradle.kts").read_text()
+        assert 'id("com.android.application") version' in root
+        assert 'id("org.jetbrains.kotlin.android") version' in root
+
 
 # ------------------------------------------------------------ release manager
 class TestReleaseManager:
