@@ -5,25 +5,26 @@ Performs ABI splitting, APK size calculation, DEX method counting,
 and Android App Bundle (AAB) to APK set merging.
 """
 
-import os
 import json
+import os
 import zipfile
+
 
 class AppSizeOptimizer:
     @staticmethod
     def calculate_apk_metrics(apk_path):
         if not os.path.exists(apk_path):
             return {"error": f"Path does not exist: {apk_path}"}
-            
+
         size_bytes = os.path.getsize(apk_path)
         metrics = {
             "size_bytes": size_bytes,
             "size_mb": round(size_bytes / (1024 * 1024), 2),
             "dex_files": 0,
             "total_uncompressed_assets_mb": 0.0,
-            "abi_splits_detected": []
+            "abi_splits_detected": [],
         }
-        
+
         try:
             with zipfile.ZipFile(apk_path, "r") as z:
                 uncompressed_asset_bytes = 0

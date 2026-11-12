@@ -7,12 +7,13 @@ Prepares downloaded APKs for direct Android system preview/installation.
 import os
 import subprocess
 
+
 class OTABridge:
     @staticmethod
     def prepare_apk_for_install(apk_path):
         if not os.path.exists(apk_path):
             return False, f"APK file not found at {apk_path}"
-        
+
         # Use android-open CLI or minis-open to open APK installer dialog
         try:
             cmd = ["android-open", apk_path]

@@ -1,4 +1,4 @@
-# DESIGN & LAYOUT SPECIFICATION — GitHub Actions & Codespaces Toolkit (Nexus OS v2.7.0)
+# DESIGN & LAYOUT SPECIFICATION — GitHub Actions & Codespaces Toolkit (App Factory v2.7.0)
 
 **Version:** 2.7.0  
 **Date:** 2026-11-02  
@@ -40,7 +40,7 @@
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                           MINIS AI AGENT (L1 - Local)                        │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐   │
-│  │ MCP Client   │  │ Config       │  │ Security     │  │ Nexus        │   │
+│  │ MCP Client   │  │ Config       │  │ Security     │  │ App Factory        │   │
 │  │ (minis-mcp)  │  │ (config.py)  │  │ (security_)  │  │ Builder      │   │
 │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘   │
 └─────────┼──────────────────┼──────────────────┼──────────────────┼──────────┘
@@ -51,7 +51,7 @@
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
 │  │ 33 MCP Tools (Rate Limited, Audited, Validated)                      │   │
 │  │ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐   │   │
-│  │ │GitHub  │ │Codespa │ │Android │ │Self-   │ │Nexus   │ │Crypto  │   │   │
+│  │ │GitHub  │ │Codespa │ │Android │ │Self-   │ │App Factory   │ │Crypto  │   │   │
 │  │ │Actions │ │ces     │ │Pipeline│ │Healing │ │Integration│ │& Memory│   │   │
 │  │ └────────┘ └────────┘ └────────┘ └────────┘ └────────┘ └────────┘   │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
@@ -98,13 +98,13 @@
 | `license_checker.py` | SPDX license compliance |
 | `proguard_gen.py` | Auto-generate ProGuard rules |
 
-### **Nexus Integration** (`scripts/`, `apps/minis-nexus/`)
+### **App Factory Integration** (`scripts/`, `apps/android-app/`)
 
 | Component | Purpose |
 |-----------|---------|
-| `nexus_builder.py` | CLI: preflight, trigger, status |
+| `app_factory.py` | CLI: preflight, trigger, status |
 | `keystore_manager.py` | Shared keystore operations |
-| `apps/minis-nexus/gradle.properties` | JVM tuning, caching, parallel |
+| `apps/android-app/gradle.properties` | JVM tuning, caching, parallel |
 | `.github/workflows/nexus-android-build.yml` | Path-filtered, cached, 25min timeout |
 
 ---
@@ -150,21 +150,21 @@ Response Data → mask_secrets_in_dict() →
 
 ## 🎯 USER EXPERIENCE LAYOUT
 
-### **CLI Commands** (`scripts/nexus_builder.py`)
+### **CLI Commands** (`scripts/app_factory.py`)
 
 ```bash
-nexus_builder.py preflight    # Local validation (L1)
-nexus_builder.py trigger      # Dispatch workflow (L3)
-nexus_builder.py status       # Poll results (L3)
+app_factory.py preflight    # Local validation (L1)
+app_factory.py trigger      # Dispatch workflow (L3)
+app_factory.py status       # Poll results (L3)
 ```
 
 ### **Keystore Manager CLI** (`scripts/android_pipeline/keystore_manager.py`)
 
 ```bash
-keystore_manager.py generate --alias minis-nexus --storepass *** --keypass ***
-keystore_manager.py sign --apk app-release.apk --alias minis-nexus --storepass *** --keypass ***
+keystore_manager.py generate --alias android-app --storepass *** --keypass ***
+keystore_manager.py sign --apk app-release.apk --alias android-app --storepass *** --keypass ***
 keystore_manager.py verify --apk app-release-signed.apk
-keystore_manager.py backup --alias minis-nexus --storepass ***
+keystore_manager.py backup --alias android-app --storepass ***
 keystore_manager.py list
 keystore_manager.py restore --backup backup.json --storepass ***
 ```
@@ -172,11 +172,11 @@ keystore_manager.py restore --backup backup.json --storepass ***
 ### **MCP Tool Invocation** (Minis Chat)
 
 ```
-User: "Nexus pre-flight check"
-→ minis-mcp-cli call github-actions-codespaces-toolkit nexus_builder_preflight '{}'
+User: "App Factory pre-flight check"
+→ minis-mcp-cli call github-actions-codespaces-toolkit app_factory_preflight '{}'
 
-User: "Generate keystore for minis-nexus"
-→ minis-mcp-cli call github-actions-codespaces-toolkit nexus_keystore_generate '{"alias": "minis-nexus", "storepass": "...", "keypass": "..."}'
+User: "Generate keystore for android-app"
+→ minis-mcp-cli call github-actions-codespaces-toolkit nexus_keystore_generate '{"alias": "android-app", "storepass": "...", "keypass": "..."}'
 
 User: "Sign and verify the release APK"
 → nexus_keystore_sign + nexus_artifact_verify
@@ -265,7 +265,7 @@ WORKDIR /workspace
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `toolkit-ci.yml` | push/PR | Test, lint, validate MCP, verify docs, docker build |
-| `nexus-android-build.yml` | push (apps/minis-nexus/**) | Quota-optimized Nexus build |
+| `nexus-android-build.yml` | push (apps/android-app/**) | Quota-optimized App Factory build |
 | `android-production-pipeline.yml` | push/PR/tag/dispatch | Production Android build template |
 
 ### **Release Automation**

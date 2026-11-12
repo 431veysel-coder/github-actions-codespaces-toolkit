@@ -5,9 +5,10 @@ Manages multi-tier memory states for build states, transient caches,
 persistent global records, and packaging artifacts.
 """
 
-import os
 import json
+import os
 import time
+
 
 class PipelineMemoryManager:
     def __init__(self, base_dir="/var/minis/skills/github-actions-codespaces/data_memory"):
@@ -16,7 +17,7 @@ class PipelineMemoryManager:
         self.transient_dir = os.path.join(self.base_dir, "transient")
         self.build_dir = os.path.join(self.base_dir, "compilation")
         self.packaging_dir = os.path.join(self.base_dir, "packaging")
-        
+
         for d in [self.persistent_dir, self.transient_dir, self.build_dir, self.packaging_dir]:
             os.makedirs(d, exist_ok=True)
 

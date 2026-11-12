@@ -1,11 +1,12 @@
-import unittest
 import os
 import sys
-import zipfile
 import tempfile
+import unittest
+import zipfile
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../scripts/android_pipeline")))
 from size_optimizer import AppSizeOptimizer
+
 
 class TestAppSizeOptimizer(unittest.TestCase):
     def test_calculate_apk_metrics(self):
@@ -20,6 +21,7 @@ class TestAppSizeOptimizer(unittest.TestCase):
             self.assertEqual(metrics["dex_files"], 1)
             self.assertIn("arm64-v8a", metrics["abi_splits_detected"])
             self.assertGreater(metrics["size_bytes"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

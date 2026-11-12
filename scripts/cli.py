@@ -4,13 +4,13 @@ CLI Interface for GitHub Actions & Codespaces Toolkit
 Entry point: minis-gh-toolkit
 """
 
+import asyncio
+import json
+import logging
 import os
 import sys
-import json
-import asyncio
-import logging
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
 import click
 from click.shell_completion import CompletionItem
@@ -20,26 +20,37 @@ pipeline_path = Path(__file__).parent / "android_pipeline"
 if str(pipeline_path) not in sys.path:
     sys.path.insert(0, str(pipeline_path))
 
-from config import get_config, validate_config, run_setup_wizard, reload_config
+from config import get_config, reload_config, run_setup_wizard, validate_config
 from security_utils import (
-    validate_github_repo, validate_workflow_name, validate_run_id,
-    validate_branch_name, validate_file_path, validate_output_dir,
-    validate_apk_path, validate_error_type, sanitize_workflow_inputs,
-    safe_run, mask_secrets, SecurityError, ValidationError
+    SecurityError,
+    ValidationError,
+    mask_secrets,
+    safe_run,
+    sanitize_workflow_inputs,
+    validate_apk_path,
+    validate_branch_name,
+    validate_error_type,
+    validate_file_path,
+    validate_github_repo,
+    validate_output_dir,
+    validate_run_id,
+    validate_workflow_name,
 )
 
 # ============================================================================
 # CLI CONTEXT & HELPERS
 # ============================================================================
 
+
 class CLIContext:
     """CLI context holding configuration and state"""
+
     def __init__(self):
         self.config = None
         self.verbose = False
         self.dry_run = False
         self.json_output = False
-    
+
     def load_config(self, config_file: Optional[str] = None):
         self.config = get_config(config_file)
         return self.config
@@ -51,25 +62,21 @@ pass_context = click.make_pass_decorator(CLIContext, ensure=True)
 def setup_logging(verbose: bool, json_format: bool = False):
     """Configure logging"""
     level = logging.DEBUG if verbose else logging.INFO
-    
+
     if json_format:
         import pythonjsonlogger.jsonlogger
-        formatter = pythonjsonlogger.jsonlogger.JsonFormatter(
-            '%(timestamp)s %(level)s %(name)s %(message)s'
-        )
+
+        formatter = pythonjsonlogger.jsonlogger.JsonFormatter("%(timestamp)s %(level)s %(name)s %(message)s")
     else:
-        formatter = logging.Formatter(
-            '%(asctime)s | %(levelname)-8s | %(name)s | %(message)s',
-            datefmt='%H:%M:%S'
-        )
-    
+        formatter = logging.Formatter("%(asctime)s | %(levelname)-8s | %(name)s | %(message)s", datefmt="%H:%M:%S")
+
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
-    
+
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
     root_logger.handlers = [handler]
-    
+
     # Reduce noise from libraries
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("github").setLevel(logging.WARNING)
@@ -99,6 +106,7 @@ def print_warning(message: str):
 # COMPLETION HELPERS
 # ============================================================================
 
+
 def complete_github_repo(ctx, param, incomplete):
     """Autocomplete GitHub repos (would need API call, return cached)"""
     # Could be enhanced with actual API call
@@ -107,20 +115,29 @@ def complete_github_repo(ctx, param, incomplete):
 
 def complete_workflow_file(ctx, param, incomplete):
     """Autocomplete workflow files"""
-    return [CompletionItem(f"{w}.yml", help=f"Workflow file") for w in [
-        "android-production-pipeline", "build", "test", "release", "ci"
-    ] if w.startswith(incomplete)]
+    return [
+        CompletionItem(f"{w}.yml", help=f"Workflow file")
+        for w in ["android-production-pipeline", "build", "test", "release", "ci"]
+        if w.startswith(incomplete)
+    ]
 
 
 def complete_error_type(ctx, param, incomplete):
     """Autocomplete error types for auto_fix_build"""
     error_types = [
-        "missing_permission", "permission_denied",
-        "gradle_lock", "lock_error",
-        "dexing_d8_r8", "proguard_missing",
-        "sdk_license", "license_not_accepted",
-        "aapt2_error", "kotlinc_error", "d8_error",
-        "gomobile_error", "manifest_error",
+        "missing_permission",
+        "permission_denied",
+        "gradle_lock",
+        "lock_error",
+        "dexing_d8_r8",
+        "proguard_missing",
+        "sdk_license",
+        "license_not_accepted",
+        "aapt2_error",
+        "kotlinc_error",
+        "d8_error",
+        "gomobile_error",
+        "manifest_error",
     ]
     return [CompletionItem(t) for t in error_types if t.startswith(incomplete)]
 
@@ -129,29 +146,28 @@ def complete_error_type(ctx, param, incomplete):
 # MAIN CLI GROUP
 # ============================================================================
 
+
 @click.group()
-@click.option('--config', '-c', 'config_file', type=click.Path(exists=True),
-              help='Path to configuration YAML file')
-@click.option('--verbose', '-v', is_flag=True, help='Enable verbose output')
-@click.option('--dry-run', is_flag=True, help='Show what would be done without executing')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
-@click.option('--debug', is_flag=True, help='Enable debug logging')
-@click.version_option(version='2.6.0', prog_name='minis-gh-toolkit')
+@click.option("--config", "-c", "config_file", type=click.Path(exists=True), help="Path to configuration YAML file")
+@click.option("--verbose", "-v", is_flag=True, help="Enable verbose output")
+@click.option("--dry-run", is_flag=True, help="Show what would be done without executing")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
+@click.option("--debug", is_flag=True, help="Enable debug logging")
+@click.version_option(version="2.6.0", prog_name="minis-gh-toolkit")
 @pass_context
-def cli(ctx: CLIContext, config_file: Optional[str], verbose: bool, 
-        dry_run: bool, json_output: bool, debug: bool):
+def cli(ctx: CLIContext, config_file: Optional[str], verbose: bool, dry_run: bool, json_output: bool, debug: bool):
     """GitHub Actions & Codespaces Toolkit for Minis AI Agent
-    
+
     Orchestrate Android builds, Codespaces, and CI/CD workflows
     across local (Minis PRoot) and cloud (GitHub Actions/Codespaces) environments.
     """
     ctx.verbose = verbose or debug
     ctx.dry_run = dry_run
     ctx.json_output = json_output
-    
+
     setup_logging(ctx.verbose, json_output)
     ctx.load_config(config_file)
-    
+
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
@@ -162,29 +178,30 @@ def wizard(ctx: CLIContext):
     """Interactive setup wizard for first-time configuration"""
     config = run_setup_wizard()
     if ctx.json_output:
-        print_json({
-            "environment": config.environment,
-            "github_api": config.github.api_url,
-            "android_sdk": config.android.sdk_root,
-            "vault_backend": config.vault.backend,
-        })
+        print_json(
+            {
+                "environment": config.environment,
+                "github_api": config.github.api_url,
+                "android_sdk": config.android.sdk_root,
+                "vault_backend": config.vault.backend,
+            }
+        )
 
 
 @cli.command()
-@click.option('--path', '-p', type=click.Path(), default='config.example.yaml',
-              help='Output path for example config')
+@click.option("--path", "-p", type=click.Path(), default="config.example.yaml", help="Output path for example config")
 @pass_context
 def config_example(ctx: CLIContext, path: str):
     """Generate example configuration file"""
     from config import ConfigLoader
+
     loader = ConfigLoader()
     loader.save_example(path)
     print_success(f"Example config saved to: {path}")
 
 
 @cli.command()
-@click.option('--config-file', '-c', type=click.Path(exists=True),
-              help='Config file to validate')
+@click.option("--config-file", "-c", type=click.Path(exists=True), help="Config file to validate")
 @pass_context
 def validate(ctx: CLIContext, config_file: Optional[str]):
     """Validate configuration"""
@@ -192,12 +209,9 @@ def validate(ctx: CLIContext, config_file: Optional[str]):
         reload_config(config_file)
     config = ctx.config
     issues = validate_config(config)
-    
+
     if ctx.json_output:
-        print_json({
-            "valid": len(issues) == 0,
-            "issues": issues
-        })
+        print_json({"valid": len(issues) == 0, "issues": issues})
     else:
         if issues:
             for issue in issues:
@@ -222,40 +236,40 @@ def doctor(ctx: CLIContext):
         "config_valid": False,
         "memory_db": False,
     }
-    
+
     # Check gh CLI
     try:
         result = safe_run(["gh", "auth", "status"])
         results["github_cli"] = result.returncode == 0
     except Exception:
         pass
-    
+
     # Check git
     try:
         result = safe_run(["git", "--version"])
         results["git"] = result.returncode == 0
     except Exception:
         pass
-    
+
     # Check Android SDK
     sdk_path = Path(config.android.sdk_root).expanduser()
     results["android_sdk"] = sdk_path.exists()
-    
+
     # Validate config
     issues = validate_config(config)
     results["config_valid"] = len([i for i in issues if i.startswith("ERROR")]) == 0
-    
+
     # Check memory DB
     db_path = Path(config.memory.db_path).expanduser()
     results["memory_db"] = db_path.parent.exists()
-    
+
     if ctx.json_output:
         print_json(results)
     else:
         for check, passed in results.items():
             status = click.style("✓ PASS", fg="green") if passed else click.style("✗ FAIL", fg="red")
             click.echo(f"  {check}: {status}")
-        
+
         if not all(results.values()):
             sys.exit(1)
 
@@ -264,15 +278,16 @@ def doctor(ctx: CLIContext):
 # GITHUB ACTIONS COMMANDS
 # ============================================================================
 
+
 @cli.group()
 def workflows():
     """GitHub Actions workflow management"""
     pass
 
 
-@workflows.command('list')
-@click.argument('repo', required=True, shell_complete=complete_github_repo)
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@workflows.command("list")
+@click.argument("repo", required=True, shell_complete=complete_github_repo)
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def workflows_list(ctx: CLIContext, repo: str, json_output: bool):
     """List workflows for a repository"""
@@ -284,19 +299,19 @@ def workflows_list(ctx: CLIContext, repo: str, json_output: bool):
             print_json(data)
         else:
             for wf in data:
-                status = click.style(wf['state'], fg="green" if wf['state'] == 'active' else "yellow")
+                status = click.style(wf["state"], fg="green" if wf["state"] == "active" else "yellow")
                 click.echo(f"  {wf['name']} ({wf['id']}) - {status} - {wf['path']}")
     except SecurityError as e:
         print_error(e.message, e.code)
         sys.exit(1)
 
 
-@workflows.command('trigger')
-@click.argument('repo', required=True, shell_complete=complete_github_repo)
-@click.argument('workflow', required=True, shell_complete=complete_workflow_file)
-@click.option('--ref', '-r', default='main', help='Git ref (branch/tag)')
-@click.option('--input', '-i', 'inputs', multiple=True, help='Input as key=value')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@workflows.command("trigger")
+@click.argument("repo", required=True, shell_complete=complete_github_repo)
+@click.argument("workflow", required=True, shell_complete=complete_workflow_file)
+@click.option("--ref", "-r", default="main", help="Git ref (branch/tag)")
+@click.option("--input", "-i", "inputs", multiple=True, help="Input as key=value")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def workflows_trigger(ctx: CLIContext, repo: str, workflow: str, ref: str, inputs: tuple, json_output: bool):
     """Trigger a workflow dispatch"""
@@ -304,23 +319,23 @@ def workflows_trigger(ctx: CLIContext, repo: str, workflow: str, ref: str, input
         repo = validate_github_repo(repo)
         workflow = validate_workflow_name(workflow)
         ref = validate_branch_name(ref)
-        
+
         input_dict = {}
         for inp in inputs:
-            if '=' in inp:
-                k, v = inp.split('=', 1)
+            if "=" in inp:
+                k, v = inp.split("=", 1)
                 input_dict[k] = v
-        
+
         input_dict = sanitize_workflow_inputs(json.dumps(input_dict))
-        
+
         if ctx.dry_run:
             print_warning(f"DRY RUN: Would trigger {workflow} on {repo}@{ref} with inputs: {input_dict}")
             return
-        
+
         cmd = ["gh", "workflow", "run", workflow, "--repo", repo, "--ref", ref]
         for k, v in input_dict.items():
             cmd.extend(["-f", f"{k}={v}"])
-        
+
         result = safe_run(cmd)
         if json_output or ctx.json_output:
             print_json({"triggered": True, "workflow": workflow, "repo": repo, "ref": ref})
@@ -331,11 +346,11 @@ def workflows_trigger(ctx: CLIContext, repo: str, workflow: str, ref: str, input
         sys.exit(1)
 
 
-@workflows.command('runs')
-@click.argument('repo', required=True, shell_complete=complete_github_repo)
-@click.option('--workflow', '-w', help='Filter by workflow name')
-@click.option('--limit', '-l', default=10, help='Max number of runs')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@workflows.command("runs")
+@click.argument("repo", required=True, shell_complete=complete_github_repo)
+@click.option("--workflow", "-w", help="Filter by workflow name")
+@click.option("--limit", "-l", default=10, help="Max number of runs")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def workflows_runs(ctx: CLIContext, repo: str, workflow: Optional[str], limit: int, json_output: bool):
     """List recent workflow runs"""
@@ -345,42 +360,55 @@ def workflows_runs(ctx: CLIContext, repo: str, workflow: Optional[str], limit: i
             workflow = validate_workflow_name(workflow)
         if limit < 1 or limit > 100:
             limit = 10
-        
-        cmd = ["gh", "run", "list", "--repo", repo, "--limit", str(limit), "--json",
-               "databaseId,name,status,conclusion,createdAt,workflowName,headBranch"]
+
+        cmd = [
+            "gh",
+            "run",
+            "list",
+            "--repo",
+            repo,
+            "--limit",
+            str(limit),
+            "--json",
+            "databaseId,name,status,conclusion,createdAt,workflowName,headBranch",
+        ]
         if workflow:
             cmd.extend(["--workflow", workflow])
-        
+
         result = safe_run(cmd)
         data = json.loads(result.stdout)
         if json_output or ctx.json_output:
             print_json(data)
         else:
             for run in data:
-                status_color = "green" if run['conclusion'] == 'success' else "red" if run['conclusion'] == 'failure' else "yellow"
-                status = click.style(run['conclusion'] or run['status'], fg=status_color)
-                click.echo(f"  #{run['databaseId']} {run['workflowName']} - {status} - {run['headBranch']} - {run['createdAt']}")
+                status_color = (
+                    "green" if run["conclusion"] == "success" else "red" if run["conclusion"] == "failure" else "yellow"
+                )
+                status = click.style(run["conclusion"] or run["status"], fg=status_color)
+                click.echo(
+                    f"  #{run['databaseId']} {run['workflowName']} - {status} - {run['headBranch']} - {run['createdAt']}"
+                )
     except SecurityError as e:
         print_error(e.message, e.code)
         sys.exit(1)
 
 
-@workflows.command('log')
-@click.argument('run_id', required=True)
-@click.argument('repo', required=True, shell_complete=complete_github_repo)
-@click.option('--failed-only/--full', default=True, help='Show only failed steps')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@workflows.command("log")
+@click.argument("run_id", required=True)
+@click.argument("repo", required=True, shell_complete=complete_github_repo)
+@click.option("--failed-only/--full", default=True, help="Show only failed steps")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def workflows_log(ctx: CLIContext, run_id: str, repo: str, failed_only: bool, json_output: bool):
     """View workflow run logs"""
     try:
         repo = validate_github_repo(repo)
         run_id = validate_run_id(run_id)
-        
+
         cmd = ["gh", "run", "view", run_id, "--repo", repo]
         if failed_only:
             cmd.append("--log-failed")
-        
+
         result = safe_run(cmd)
         if json_output or ctx.json_output:
             print_json({"log": result.stdout, "run_id": run_id, "repo": repo})
@@ -395,14 +423,15 @@ def workflows_log(ctx: CLIContext, run_id: str, repo: str, failed_only: bool, js
 # CODESPACES COMMANDS
 # ============================================================================
 
+
 @cli.group()
 def codespaces():
     """GitHub Codespaces management"""
     pass
 
 
-@codespaces.command('list')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@codespaces.command("list")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def codespaces_list(ctx: CLIContext, json_output: bool):
     """List active Codespaces"""
@@ -413,19 +442,19 @@ def codespaces_list(ctx: CLIContext, json_output: bool):
             print_json(data)
         else:
             for cs in data:
-                state_color = "green" if cs['state'] == 'Running' else "yellow"
-                state = click.style(cs['state'], fg=state_color)
+                state_color = "green" if cs["state"] == "Running" else "yellow"
+                state = click.style(cs["state"], fg=state_color)
                 click.echo(f"  {cs['name']} ({cs['repository']}) - {state} - {cs['machine']} - {cs['branch']}")
     except SecurityError as e:
         print_error(e.message, e.code)
         sys.exit(1)
 
 
-@codespaces.command('create')
-@click.argument('repo', required=True, shell_complete=complete_github_repo)
-@click.option('--branch', '-b', help='Branch to use')
-@click.option('--machine', '-m', help='Machine type')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@codespaces.command("create")
+@click.argument("repo", required=True, shell_complete=complete_github_repo)
+@click.option("--branch", "-b", help="Branch to use")
+@click.option("--machine", "-m", help="Machine type")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def codespaces_create(ctx: CLIContext, repo: str, branch: Optional[str], machine: Optional[str], json_output: bool):
     """Create a new Codespace"""
@@ -433,17 +462,17 @@ def codespaces_create(ctx: CLIContext, repo: str, branch: Optional[str], machine
         repo = validate_github_repo(repo)
         if branch:
             branch = validate_branch_name(branch)
-        
+
         if ctx.dry_run:
             print_warning(f"DRY RUN: Would create codespace for {repo}@{branch or 'default'}")
             return
-        
+
         cmd = ["gh", "codespace", "create", "--repo", repo]
         if branch:
             cmd.extend(["--branch", branch])
         if machine:
             cmd.extend(["--machine", machine])
-        
+
         result = safe_run(cmd)
         if json_output or ctx.json_output:
             print_json({"created": True, "repo": repo, "branch": branch})
@@ -455,9 +484,9 @@ def codespaces_create(ctx: CLIContext, repo: str, branch: Optional[str], machine
         sys.exit(1)
 
 
-@codespaces.command('delete')
-@click.argument('codespace', required=True)
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@codespaces.command("delete")
+@click.argument("codespace", required=True)
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def codespaces_delete(ctx: CLIContext, codespace: str, json_output: bool):
     """Delete a Codespace"""
@@ -465,7 +494,7 @@ def codespaces_delete(ctx: CLIContext, codespace: str, json_output: bool):
         if ctx.dry_run:
             print_warning(f"DRY RUN: Would delete codespace {codespace}")
             return
-        
+
         result = safe_run(["gh", "codespace", "delete", "--codespace", codespace, "--confirm"])
         if json_output or ctx.json_output:
             print_json({"deleted": True, "codespace": codespace})
@@ -480,28 +509,29 @@ def codespaces_delete(ctx: CLIContext, codespace: str, json_output: bool):
 # ANDROID PIPELINE COMMANDS
 # ============================================================================
 
+
 @cli.group()
 def android():
     """Android build pipeline management"""
     pass
 
 
-@android.command('verify')
-@click.argument('project_path', type=click.Path(exists=True), default='.')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@android.command("verify")
+@click.argument("project_path", type=click.Path(exists=True), default=".")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def android_verify(ctx: CLIContext, project_path: str, json_output: bool):
     """Pre-flight check for Android project"""
     try:
         project_path = str(validate_file_path(project_path, must_exist=True))
-        
+
         # Import and run verification
         sys.path.insert(0, str(pipeline_path))
         from dependency_graph import AndroidProjectAnalyzer
-        
+
         analyzer = AndroidProjectAnalyzer(project_path)
         report = analyzer.check_prerequisites()
-        
+
         if json_output or ctx.json_output:
             print_json(report)
         else:
@@ -514,24 +544,25 @@ def android_verify(ctx: CLIContext, project_path: str, json_output: bool):
         sys.exit(1)
 
 
-@android.command('diagnose')
-@click.argument('repo', required=True, shell_complete=complete_github_repo)
-@click.argument('run_id', required=True)
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@android.command("diagnose")
+@click.argument("repo", required=True, shell_complete=complete_github_repo)
+@click.argument("run_id", required=True)
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def android_diagnose(ctx: CLIContext, repo: str, run_id: str, json_output: bool):
     """Diagnose build failure from workflow run"""
     try:
         repo = validate_github_repo(repo)
         run_id = validate_run_id(run_id)
-        
+
         cmd = ["gh", "run", "view", run_id, "--repo", repo, "--log-failed"]
         result = safe_run(cmd)
-        
+
         sys.path.insert(0, str(pipeline_path))
         from build_monitor import AndroidBuildDiagnostics
+
         diagnostics = AndroidBuildDiagnostics.analyze_log(result.stdout or result.stderr)
-        
+
         if json_output or ctx.json_output:
             print_json(diagnostics)
         else:
@@ -543,11 +574,11 @@ def android_diagnose(ctx: CLIContext, repo: str, run_id: str, json_output: bool)
         sys.exit(1)
 
 
-@android.command('artifacts')
-@click.argument('repo', required=True, shell_complete=complete_github_repo)
-@click.argument('run_id', required=True)
-@click.option('--output-dir', '-o', type=click.Path(), default='/var/minis/workspace/artifacts')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@android.command("artifacts")
+@click.argument("repo", required=True, shell_complete=complete_github_repo)
+@click.argument("run_id", required=True)
+@click.option("--output-dir", "-o", type=click.Path(), default="/var/minis/workspace/artifacts")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def android_artifacts(ctx: CLIContext, repo: str, run_id: str, output_dir: str, json_output: bool):
     """Download build artifacts (APKs/AABs)"""
@@ -555,14 +586,14 @@ def android_artifacts(ctx: CLIContext, repo: str, run_id: str, output_dir: str, 
         repo = validate_github_repo(repo)
         run_id = validate_run_id(run_id)
         output_dir = str(validate_output_dir(output_dir))
-        
+
         if ctx.dry_run:
             print_warning(f"DRY RUN: Would download artifacts from {repo} run {run_id} to {output_dir}")
             return
-        
+
         cmd = ["gh", "run", "download", run_id, "--repo", repo, "--dir", output_dir]
         result = safe_run(cmd)
-        
+
         if json_output or ctx.json_output:
             print_json({"downloaded": True, "output_dir": output_dir})
         else:
@@ -572,19 +603,20 @@ def android_artifacts(ctx: CLIContext, repo: str, run_id: str, output_dir: str, 
         sys.exit(1)
 
 
-@android.command('profile')
-@click.argument('apk_path', type=click.Path(exists=True))
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@android.command("profile")
+@click.argument("apk_path", type=click.Path(exists=True))
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def android_profile(ctx: CLIContext, apk_path: str, json_output: bool):
     """Profile built APK (size, DEX count, native libs, assets)"""
     try:
         apk_path = str(validate_apk_path(apk_path))
-        
+
         sys.path.insert(0, str(pipeline_path))
         from apk_profiler import APKProfiler
+
         report = APKProfiler.profile_apk(apk_path)
-        
+
         if json_output or ctx.json_output:
             print_json(report)
         else:
@@ -596,23 +628,23 @@ def android_profile(ctx: CLIContext, apk_path: str, json_output: bool):
         sys.exit(1)
 
 
-@android.command('autofix')
-@click.argument('error_type', required=True, shell_complete=complete_error_type)
-@click.argument('project_path', type=click.Path(exists=True), default='.')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@android.command("autofix")
+@click.argument("error_type", required=True, shell_complete=complete_error_type)
+@click.argument("project_path", type=click.Path(exists=True), default=".")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def android_autofix(ctx: CLIContext, error_type: str, project_path: str, json_output: bool):
     """Apply automated self-healing patch for build error"""
     try:
         error_type = validate_error_type(error_type)
         project_path = str(validate_file_path(project_path, must_exist=True))
-        
+
         sys.path.insert(0, str(pipeline_path))
         from auto_fixer import AutoFixEngine
-        
+
         engine = AutoFixEngine(project_path)
         fixes = engine.apply_patch_for_error(error_type)
-        
+
         if not fixes:
             msg = "No automated patch available for this error type"
             if json_output or ctx.json_output:
@@ -620,15 +652,15 @@ def android_autofix(ctx: CLIContext, error_type: str, project_path: str, json_ou
             else:
                 print_warning(msg)
             return
-        
+
         if ctx.dry_run:
             print_warning(f"DRY RUN: Would apply fixes: {fixes}")
             if json_output or ctx.json_output:
                 print_json({"dry_run": True, "would_apply": fixes})
             return
-        
+
         ok, msg = engine.commit_and_push(f"fix(autofix): self-healing patch for {error_type}")
-        
+
         result = {"applied_fixes": fixes, "push_status": msg, "success": ok}
         if json_output or ctx.json_output:
             print_json(result)
@@ -643,26 +675,26 @@ def android_autofix(ctx: CLIContext, error_type: str, project_path: str, json_ou
         sys.exit(1)
 
 
-@android.command('sbom')
-@click.argument('project_path', type=click.Path(exists=True), default='.')
-@click.option('--format', '-f', type=click.Choice(['json', 'xml']), default='json')
-@click.option('--output', '-o', type=click.Path(), help='Output file path')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@android.command("sbom")
+@click.argument("project_path", type=click.Path(exists=True), default=".")
+@click.option("--format", "-f", type=click.Choice(["json", "xml"]), default="json")
+@click.option("--output", "-o", type=click.Path(), help="Output file path")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def android_sbom(ctx: CLIContext, project_path: str, format: str, output: Optional[str], json_output: bool):
     """Generate CycloneDX SBOM for project"""
     try:
         project_path = str(validate_file_path(project_path, must_exist=True))
-        
+
         sys.path.insert(0, str(pipeline_path))
         from sbom_generator import SBOMGenerator
-        
+
         gen = SBOMGenerator(project_path)
         if output:
             gen.output_path = Path(output)
-        
+
         ok, path = gen.generate_sbom(format)
-        
+
         if json_output or ctx.json_output:
             print_json({"success": ok, "path": path})
         else:
@@ -676,22 +708,22 @@ def android_sbom(ctx: CLIContext, project_path: str, format: str, output: Option
         sys.exit(1)
 
 
-@android.command('changelog')
-@click.argument('version_tag', required=True)
-@click.argument('project_path', type=click.Path(exists=True), default='.')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@android.command("changelog")
+@click.argument("version_tag", required=True)
+@click.argument("project_path", type=click.Path(exists=True), default=".")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def android_changelog(ctx: CLIContext, version_tag: str, project_path: str, json_output: bool):
     """Generate CHANGELOG.md from git history"""
     try:
         project_path = str(validate_file_path(project_path, must_exist=True))
-        
+
         sys.path.insert(0, str(pipeline_path))
         from changelog_automator import ChangelogAutomator
-        
+
         automator = ChangelogAutomator(project_path)
         ok, path = automator.generate_changelog(version_tag)
-        
+
         if json_output or ctx.json_output:
             print_json({"success": ok, "changelog_path": path})
         else:
@@ -709,21 +741,23 @@ def android_changelog(ctx: CLIContext, version_tag: str, project_path: str, json
 # SECURITY COMMANDS
 # ============================================================================
 
+
 @cli.group()
 def security():
     """Security and ACL management"""
     pass
 
 
-@security.command('check')
-@click.option('--command', '-c', help='Command to validate')
-@click.option('--path', '-p', help='File path to validate')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@security.command("check")
+@click.option("--command", "-c", help="Command to validate")
+@click.option("--path", "-p", help="File path to validate")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def security_check(ctx: CLIContext, command: Optional[str], path: Optional[str], json_output: bool):
     """Validate command or path against security ACL"""
     try:
         from security_acl import AgentSecurityACL
+
         results = {}
         if command:
             ok, msg = AgentSecurityACL.validate_command(command)
@@ -731,7 +765,7 @@ def security_check(ctx: CLIContext, command: Optional[str], path: Optional[str],
         if path:
             ok, msg = AgentSecurityACL.validate_file_path(path)
             results["path_check"] = {"allowed": ok, "reason": msg}
-        
+
         if json_output or ctx.json_output:
             print_json(results)
         else:
@@ -743,19 +777,19 @@ def security_check(ctx: CLIContext, command: Optional[str], path: Optional[str],
         sys.exit(1)
 
 
-@security.command('encrypt')
-@click.argument('secret_text')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@security.command("encrypt")
+@click.argument("secret_text")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def security_encrypt(ctx: CLIContext, secret_text: str, json_output: bool):
     """Encrypt secret using AES-256 Fernet"""
     try:
         sys.path.insert(0, str(pipeline_path))
         from vault_crypto import VaultCryptoEngine
-        
+
         engine = VaultCryptoEngine()
         encrypted = engine.encrypt_secret(secret_text)
-        
+
         if json_output or ctx.json_output:
             print_json({"encrypted": encrypted})
         else:
@@ -765,21 +799,33 @@ def security_encrypt(ctx: CLIContext, secret_text: str, json_output: bool):
         sys.exit(1)
 
 
-@security.command('vault')
-@click.argument('action', type=click.Choice(['get', 'set', 'list', 'delete']))
-@click.argument('secret_name', required=False)
-@click.argument('secret_value', required=False)
-@click.option('--backend', '-b', type=click.Choice(['local', 'aws_kms', 'hashicorp_vault', 'azure_keyvault', 'gcp_secretmanager']), default='local')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@security.command("vault")
+@click.argument("action", type=click.Choice(["get", "set", "list", "delete"]))
+@click.argument("secret_name", required=False)
+@click.argument("secret_value", required=False)
+@click.option(
+    "--backend",
+    "-b",
+    type=click.Choice(["local", "aws_kms", "hashicorp_vault", "azure_keyvault", "gcp_secretmanager"]),
+    default="local",
+)
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
-def security_vault(ctx: CLIContext, action: str, secret_name: Optional[str], secret_value: Optional[str], backend: str, json_output: bool):
+def security_vault(
+    ctx: CLIContext,
+    action: str,
+    secret_name: Optional[str],
+    secret_value: Optional[str],
+    backend: str,
+    json_output: bool,
+):
     """Manage secrets in vault"""
     try:
         from vault_adapter import EnterpriseVaultManager
-        
+
         mgr = EnterpriseVaultManager(backend=backend)
-        
-        if action == 'get':
+
+        if action == "get":
             if not secret_name:
                 print_error("Secret name required for get")
                 sys.exit(1)
@@ -791,8 +837,8 @@ def security_vault(ctx: CLIContext, action: str, secret_name: Optional[str], sec
                     click.echo(val)
                 else:
                     print_warning(f"Secret not found: {secret_name}")
-        
-        elif action == 'set':
+
+        elif action == "set":
             if not secret_name or not secret_value:
                 print_error("Secret name and value required for set")
                 sys.exit(1)
@@ -805,16 +851,16 @@ def security_vault(ctx: CLIContext, action: str, secret_name: Optional[str], sec
                 else:
                     print_error("Failed to store secret")
                     sys.exit(1)
-        
-        elif action == 'list':
+
+        elif action == "list":
             secrets = mgr.list_secrets(secret_name or "")
             if json_output or ctx.json_output:
                 print_json({"secrets": secrets})
             else:
                 for s in secrets:
                     click.echo(f"  {s}")
-        
-        elif action == 'delete':
+
+        elif action == "delete":
             if not secret_name:
                 print_error("Secret name required for delete")
                 sys.exit(1)
@@ -836,37 +882,40 @@ def security_vault(ctx: CLIContext, action: str, secret_name: Optional[str], sec
 # MEMORY COMMANDS
 # ============================================================================
 
+
 @cli.group()
 def memory():
     """Pipeline memory management"""
     pass
 
 
-@memory.command('save')
-@click.argument('type', type=click.Choice(['compilation', 'packaging', 'transient', 'persistent']))
-@click.argument('key')
-@click.argument('value')
-@click.option('--category', help='Category for persistent records')
-@click.option('--ttl', type=int, help='TTL in seconds for transient cache')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@memory.command("save")
+@click.argument("type", type=click.Choice(["compilation", "packaging", "transient", "persistent"]))
+@click.argument("key")
+@click.argument("value")
+@click.option("--category", help="Category for persistent records")
+@click.option("--ttl", type=int, help="TTL in seconds for transient cache")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
-def memory_save(ctx: CLIContext, type: str, key: str, value: str, category: Optional[str], ttl: Optional[int], json_output: bool):
+def memory_save(
+    ctx: CLIContext, type: str, key: str, value: str, category: Optional[str], ttl: Optional[int], json_output: bool
+):
     """Save data to pipeline memory"""
     try:
         from sqlite_memory_manager import SQLiteMemoryManager
-        
+
         mgr = SQLiteMemoryManager()
         data = json.loads(value)
-        
-        if type == 'compilation':
+
+        if type == "compilation":
             ok = mgr.save_compilation_state(key, data)
-        elif type == 'packaging':
+        elif type == "packaging":
             ok = mgr.save_packaging_record(key, data)
-        elif type == 'transient':
+        elif type == "transient":
             ok = mgr.save_transient_cache(key, data, ttl)
-        elif type == 'persistent':
-            ok = mgr.save_persistent_record(key, data, category or 'general')
-        
+        elif type == "persistent":
+            ok = mgr.save_persistent_record(key, data, category or "general")
+
         if json_output or ctx.json_output:
             print_json({"success": ok})
         else:
@@ -883,27 +932,27 @@ def memory_save(ctx: CLIContext, type: str, key: str, value: str, category: Opti
         sys.exit(1)
 
 
-@memory.command('get')
-@click.argument('type', type=click.Choice(['compilation', 'packaging', 'transient', 'persistent']))
-@click.argument('key')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@memory.command("get")
+@click.argument("type", type=click.Choice(["compilation", "packaging", "transient", "persistent"]))
+@click.argument("key")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def memory_get(ctx: CLIContext, type: str, key: str, json_output: bool):
     """Get data from pipeline memory"""
     try:
         from sqlite_memory_manager import SQLiteMemoryManager
-        
+
         mgr = SQLiteMemoryManager()
-        
-        if type == 'compilation':
+
+        if type == "compilation":
             val = mgr.get_compilation_state(key)
-        elif type == 'packaging':
+        elif type == "packaging":
             val = mgr.get_packaging_record(key)
-        elif type == 'transient':
+        elif type == "transient":
             val = mgr.get_transient_cache(key)
-        elif type == 'persistent':
+        elif type == "persistent":
             val = mgr.get_persistent_record(key)
-        
+
         if json_output or ctx.json_output:
             print_json({"found": val is not None, "value": val})
         else:
@@ -916,17 +965,17 @@ def memory_get(ctx: CLIContext, type: str, key: str, json_output: bool):
         sys.exit(1)
 
 
-@memory.command('stats')
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@memory.command("stats")
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def memory_stats(ctx: CLIContext, json_output: bool):
     """Show memory database statistics"""
     try:
         from sqlite_memory_manager import SQLiteMemoryManager
-        
+
         mgr = SQLiteMemoryManager()
         stats = mgr.get_stats()
-        
+
         if json_output or ctx.json_output:
             print_json(stats)
         else:
@@ -942,9 +991,10 @@ def memory_stats(ctx: CLIContext, json_output: bool):
 # UTILITY COMMANDS
 # ============================================================================
 
+
 @cli.command()
-@click.argument('repo', required=True, shell_complete=complete_github_repo)
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@click.argument("repo", required=True, shell_complete=complete_github_repo)
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def detect(ctx: CLIContext, repo: str, json_output: bool):
     """Detect project architecture (Native/Flutter/React Native/KMP)"""
@@ -962,7 +1012,7 @@ def detect(ctx: CLIContext, repo: str, json_output: bool):
 
 
 @cli.command()
-@click.option('--json', 'json_output', is_flag=True, help='Output as JSON')
+@click.option("--json", "json_output", is_flag=True, help="Output as JSON")
 @pass_context
 def version(ctx: CLIContext, json_output: bool):
     """Show version information"""
@@ -983,17 +1033,107 @@ def version(ctx: CLIContext, json_output: bool):
 # SHELL COMPLETION
 # ============================================================================
 
+
 @cli.command(hidden=True)
-@click.argument('shell', type=click.Choice(['bash', 'zsh', 'fish', 'powershell']))
+@click.argument("shell", type=click.Choice(["bash", "zsh", "fish", "powershell"]))
 def completion(shell: str):
     """Generate shell completion script"""
     click.echo(f"# Add to your ~/.{shell}rc:")
-    click.echo(f"eval \"$(_MINIS_GH_TOOLKIT_COMPLETE={shell}_source minis-gh-toolkit)\"")
+    click.echo(f'eval "$(_MINIS_GH_TOOLKIT_COMPLETE={shell}_source minis-gh-toolkit)"')
+
+
+# ============================================================================
+# APP FACTORY COMMANDS
+# ============================================================================
+
+
+@cli.group()
+def factory():
+    """App Factory — fully automated Android production (scaffold, build, release)"""
+
+
+@factory.command("scaffold")
+@click.argument("name")
+@click.option("--package", "package_name", required=True, help="Application id, e.g. com.example.app")
+@click.option("--app-name", default=None, help="Human-readable app name")
+@click.option("--ui", type=click.Choice(["compose", "xml"]), default="compose", show_default=True)
+@click.option("--min-sdk", default=24, show_default=True)
+@click.option("--target-sdk", default=34, show_default=True)
+@click.option("--workdir", default="/var/minis/workspace/app-factory", show_default=True)
+def factory_scaffold(name, package_name, app_name, ui, min_sdk, target_sdk, workdir):
+    """Create a complete, compilable Android project skeleton."""
+    from app_factory import AppFactory
+
+    result = AppFactory(workdir=workdir).stage_scaffold(name, package_name, app_name, ui, min_sdk, target_sdk)
+    if not result:
+        print_error("Scaffolding failed")
+        sys.exit(1)
+    project_path, report = result
+    print_success(f"Project created at {project_path}")
+    click.echo(json.dumps(report, indent=2))
+
+
+@factory.command("run")
+@click.argument("name")
+@click.option("--package", "package_name", required=True)
+@click.option("--app-name", default=None)
+@click.option("--ui", type=click.Choice(["compose", "xml"]), default="compose", show_default=True)
+@click.option("--repo", default=None, help="Create/push this GitHub repo and build it")
+@click.option("--install", is_flag=True, help="Install the APK on this device when done")
+@click.option("--workdir", default="/var/minis/workspace/app-factory", show_default=True)
+def factory_run(name, package_name, app_name, ui, repo, install, workdir):
+    """Full pipeline: scaffold -> workflow -> git -> cloud build -> download -> profile."""
+    from app_factory import AppFactory
+
+    report = AppFactory(workdir=workdir).run(name, package_name, app_name, ui, repo=repo, install=install)
+    click.echo(json.dumps(report, indent=2))
+    sys.exit(0 if report.get("status") in ("success", "scaffolded") else 1)
+
+
+@factory.command("build")
+@click.option("--repo", required=True, help="owner/name")
+@click.option("--ref", default="main", show_default=True)
+@click.option("--workflow", default="android-build.yml", show_default=True)
+def factory_build(repo, ref, workflow):
+    """Dispatch a cloud build for an existing repo and watch it to completion."""
+    from app_factory import AppFactory
+
+    result = AppFactory().stage_build(repo, ref=ref, workflow=workflow)
+    click.echo(json.dumps(result, indent=2))
+    sys.exit(0 if (result or {}).get("conclusion") == "success" else 1)
+
+
+@factory.command("diff")
+@click.argument("apk_a")
+@click.argument("apk_b")
+def factory_diff(apk_a, apk_b):
+    """Compare two APK/AAB builds."""
+    from artifact_diff import ArtifactDiffer
+
+    click.echo(json.dumps(ArtifactDiffer.compare(apk_a, apk_b), indent=2))
+
+
+@cli.command("release")
+@click.option("--repo", required=True, help="owner/name")
+@click.option("--project-path", default=".", show_default=True)
+@click.option("--bump", type=click.Choice(["patch", "minor", "major"]), default="patch", show_default=True)
+@click.option("--assets", multiple=True, help="APK/AAB files to attach (repeatable)")
+@click.option("--prerelease", is_flag=True)
+def release_cmd(repo, project_path, bump, assets, prerelease):
+    """Version bump -> changelog -> tag -> GitHub Release with assets."""
+    from release_manager import ReleaseManager
+
+    report = ReleaseManager(repo, project_path).run_release_pipeline(
+        bump_type=bump, assets=list(assets), prerelease=prerelease
+    )
+    click.echo(json.dumps(report, indent=2))
+    sys.exit(0 if report.get("status") == "success" else 1)
 
 
 # ============================================================================
 # ENTRY POINT
 # ============================================================================
+
 
 def main():
     """Main entry point"""

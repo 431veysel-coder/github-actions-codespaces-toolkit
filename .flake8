@@ -1,0 +1,9 @@
+[flake8]
+max-line-length = 120
+# Project policy: unused imports/locals are tolerated (many are intentional
+# re-exports for the MCP plugin surface, or side-effect imports used by tools
+# imported on demand). Real defects — undefined names, redefinitions, syntax
+# errors — stay fatal.
+extend-ignore = E203, E501, W503, E731, F401, F841, E402, E741, F541
+exclude = .git,__pycache__,build,dist,.eggs,*.egg,.pytest_cache,node_modules,offloads
+per-file-ignores = __init__.py:F401

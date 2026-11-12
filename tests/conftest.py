@@ -3,17 +3,18 @@
 Shared test fixtures and configuration for GitHub Actions & Codespaces Toolkit.
 """
 
+import json
 import os
 import sys
 import tempfile
-import json
-import yaml
 from pathlib import Path
-from typing import Dict, Any, Generator, List
-from unittest.mock import Mock, MagicMock, patch
+from typing import Any, Dict, Generator, List
+from unittest.mock import MagicMock, Mock, patch
+
+import httpx
 import pytest
 import respx
-import httpx
+import yaml
 
 # Add project paths
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -25,6 +26,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "mcp_server"))
 # ============================================================================
 # FIXTURES: TEMPORARY DIRECTORIES & PROJECTS
 # ============================================================================
+
 
 @pytest.fixture(scope="function")
 def temp_dir() -> Generator[Path, None, None]:
@@ -38,7 +40,7 @@ def temp_android_project(temp_dir: Path) -> Generator[Path, None, None]:
     """Create a minimal valid Android project structure."""
     project = temp_dir / "test-android-project"
     project.mkdir(parents=True)
-    
+
     # Create Gradle files
     (project / "build.gradle").write_text("""
 plugins {
@@ -77,7 +79,7 @@ dependencies {
     implementation 'com.google.android.material:material:1.11.0'
 }
 """)
-    
+
     (project / "settings.gradle").write_text("""
 pluginManagement {
     repositories {
@@ -89,7 +91,7 @@ pluginManagement {
 rootProject.name = "TestApp"
 include ':app'
 """)
-    
+
     (project / "gradle.properties").write_text("""
 org.gradle.jvmargs=-Xmx4g -XX:+UseG1GC
 org.gradle.parallel=true
@@ -98,18 +100,18 @@ android.useAndroidX=true
 android.nonTransitiveRClass=true
 kotlin.code.style=official
 """)
-    
+
     # Create gradle wrapper
     wrapper_dir = project / "gradle" / "wrapper"
     wrapper_dir.mkdir(parents=True)
     (wrapper_dir / "gradle-wrapper.properties").write_text("""
 distributionBase=GRADLE_USER_HOME
 distributionPath=wrapper/dists
-distributionUrl=https\://services.gradle.org/distributions/gradle-8.5-bin.zip
+distributionUrl=https\\://services.gradle.org/distributions/gradle-8.5-bin.zip
 zipStoreBase=GRADLE_USER_HOME
 zipStorePath=wrapper/dists
 """)
-    
+
     # Create app module - ensure app directory exists first
     app_dir = project / "app"
     app_dir.mkdir(parents=True, exist_ok=True)
@@ -155,7 +157,7 @@ dependencies {
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }
 """)
-    
+
     # Create AndroidManifest.xml
     manifest_dir = app_dir / "src" / "main"
     manifest_dir.mkdir(parents=True)
@@ -182,7 +184,7 @@ dependencies {
         </activity>
     </application>
 </manifest>""")
-    
+
     # Create minimal Kotlin file
     kotlin_dir = manifest_dir / "java" / "com" / "example" / "test"
     kotlin_dir.mkdir(parents=True)
@@ -198,13 +200,13 @@ class MainActivity : AppCompatActivity() {
     }
 }
 """)
-    
+
     # Create gradlew script
     (project / "gradlew").write_text("""#!/bin/sh
 exec "$(dirname "$0")/gradle/wrapper/gradle-wrapper.jar" "$@"
 """)
     (project / "gradlew").chmod(0o755)
-    
+
     yield project
 
 
@@ -213,7 +215,7 @@ def temp_flutter_project(temp_dir: Path) -> Generator[Path, None, None]:
     """Create a minimal Flutter project structure."""
     project = temp_dir / "test-flutter-project"
     project.mkdir(parents=True)
-    
+
     (project / "pubspec.yaml").write_text("""
 name: test_app
 description: A test Flutter app.
@@ -232,7 +234,7 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^3.0.0
 """)
-    
+
     # Create Android module for Flutter
     android_dir = project / "android"
     android_dir.mkdir(parents=True)
@@ -253,7 +255,7 @@ allprojects {
     }
 }
 """)
-    
+
     yield project
 
 
@@ -262,7 +264,7 @@ def temp_react_native_project(temp_dir: Path) -> Generator[Path, None, None]:
     """Create a minimal React Native project structure."""
     project = temp_dir / "test-rn-project"
     project.mkdir(parents=True)
-    
+
     (project / "package.json").write_text("""
 {
   "name": "TestRNApp",
@@ -295,7 +297,7 @@ def temp_react_native_project(temp_dir: Path) -> Generator[Path, None, None]:
   }
 }
 """)
-    
+
     # Create Android module
     android_dir = project / "android"
     android_dir.mkdir(parents=True)
@@ -317,13 +319,14 @@ buildscript {
     }
 }
 """)
-    
+
     yield project
 
 
 # ============================================================================
 # FIXTURES: GITHUB API MOCKS
 # ============================================================================
+
 
 @pytest.fixture(scope="function")
 def mock_gh_api() -> Generator[respx.MockRouter, None, None]:
@@ -349,9 +352,7 @@ def mock_gh_workflows(mock_gh_api: respx.MockRouter) -> Dict[str, Any]:
 @pytest.fixture(scope="function")
 def mock_gh_workflow_run(mock_gh_api: respx.MockRouter) -> Dict[str, Any]:
     """Setup mock for workflow run triggering."""
-    mock_gh_api.post("/repos/owner/repo/actions/workflows/build.yml/dispatches").mock(
-        return_value=httpx.Response(204)
-    )
+    mock_gh_api.post("/repos/owner/repo/actions/workflows/build.yml/dispatches").mock(return_value=httpx.Response(204))
     return {"triggered": True}
 
 
@@ -366,7 +367,7 @@ def mock_gh_runs(mock_gh_api: respx.MockRouter) -> List[Dict[str, Any]]:
             "conclusion": "success",
             "createdAt": "2026-11-01T10:00:00Z",
             "workflowName": "Build Android APK",
-            "headBranch": "main"
+            "headBranch": "main",
         },
         {
             "databaseId": 12344,
@@ -375,8 +376,8 @@ def mock_gh_runs(mock_gh_api: respx.MockRouter) -> List[Dict[str, Any]]:
             "conclusion": "failure",
             "createdAt": "2026-11-01T09:00:00Z",
             "workflowName": "Build Android APK",
-            "headBranch": "feature/test"
-        }
+            "headBranch": "feature/test",
+        },
     ]
     mock_gh_api.get("/repos/owner/repo/actions/runs").mock(
         return_value=httpx.Response(200, json={"workflow_runs": runs, "total_count": len(runs)})
@@ -440,6 +441,7 @@ BUILD FAILED in 45s
 # FIXTURES: CONFIGURATION
 # ============================================================================
 
+
 @pytest.fixture(scope="function")
 def test_config(temp_dir: Path) -> Dict[str, Any]:
     """Create a test configuration."""
@@ -449,7 +451,7 @@ def test_config(temp_dir: Path) -> Dict[str, Any]:
             "api_url": "https://api.github.com",
             "timeout": 30,
             "max_retries": 3,
-            "rate_limit_buffer": 100
+            "rate_limit_buffer": 100,
         },
         "android": {
             "sdk_root": "/opt/android-sdk",
@@ -461,34 +463,30 @@ def test_config(temp_dir: Path) -> Dict[str, Any]:
             "gradle_version": "8.5",
             "kotlin_version": "1.9.0",
             "jvm_args": "-Xmx4g -XX:+UseG1GC",
-            "parallel_workers": 4
+            "parallel_workers": 4,
         },
         "security": {
             "enable_hitl": True,
             "allowed_write_roots": [str(temp_dir), "/tmp"],
             "blocked_paths": ["/etc", "/usr", "/boot"],
             "secret_masking": True,
-            "audit_logging": True
+            "audit_logging": True,
         },
         "memory": {
             "db_path": str(temp_dir / "pipeline_memory.db"),
             "enable_wal": True,
             "cache_size_mb": 32,
-            "default_ttl_seconds": 3600
+            "default_ttl_seconds": 3600,
         },
-        "logging": {
-            "level": "DEBUG",
-            "format": "json",
-            "output": "stdout"
-        },
+        "logging": {"level": "DEBUG", "format": "json", "output": "stdout"},
         "environment": "testing",
-        "debug": True
+        "debug": True,
     }
-    
+
     # Write config file
     config_file = temp_dir / "test-config.yaml"
     config_file.write_text(yaml.dump(config))
-    
+
     return config
 
 
@@ -496,6 +494,7 @@ def test_config(temp_dir: Path) -> Dict[str, Any]:
 def config_loader(test_config: Dict[str, Any], temp_dir: Path):
     """Create a ConfigLoader instance with test config."""
     from config import ConfigLoader
+
     loader = ConfigLoader()
     config = loader.load(str(temp_dir / "test-config.yaml"))
     return config
@@ -504,6 +503,7 @@ def config_loader(test_config: Dict[str, Any], temp_dir: Path):
 # ============================================================================
 # FIXTURES: SECURITY & AUDIT
 # ============================================================================
+
 
 @pytest.fixture(scope="function")
 def audit_log_file(temp_dir: Path) -> Generator[Path, None, None]:
@@ -519,28 +519,25 @@ def audit_log_file(temp_dir: Path) -> Generator[Path, None, None]:
 # FIXTURES: MCP SERVER & TOOLS
 # ============================================================================
 
+
 @pytest.fixture(scope="function")
 def mcp_server():
     """Create MCP server instance for testing."""
     from server import app
+
     return app
 
 
 @pytest.fixture(scope="function")
 def sample_mcp_request() -> Dict[str, Any]:
     """Sample MCP tool request."""
-    return {
-        "method": "tools/call",
-        "params": {
-            "name": "list_workflows",
-            "arguments": {"repo": "owner/repo"}
-        }
-    }
+    return {"method": "tools/call", "params": {"name": "list_workflows", "arguments": {"repo": "owner/repo"}}}
 
 
 # ============================================================================
 # FIXTURES: ARTIFACTS & BUILDS
 # ============================================================================
+
 
 @pytest.fixture(scope="function")
 def sample_apk(temp_dir: Path) -> Path:
@@ -548,7 +545,8 @@ def sample_apk(temp_dir: Path) -> Path:
     apk_path = temp_dir / "app-debug.apk"
     # Create a minimal ZIP file (APK is a ZIP)
     import zipfile
-    with zipfile.ZipFile(apk_path, 'w') as zf:
+
+    with zipfile.ZipFile(apk_path, "w") as zf:
         zf.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\n")
         zf.writestr("classes.dex", b"fake dex content")
         zf.writestr("resources.arsc", b"fake resources")
@@ -569,9 +567,11 @@ def sample_keystore(temp_dir: Path) -> Path:
 # HELPER FUNCTIONS
 # ============================================================================
 
+
 def create_git_repo(temp_dir: Path) -> Path:
     """Initialize a git repo in temp_dir."""
     import subprocess
+
     repo = temp_dir / "git-repo"
     repo.mkdir(parents=True)
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
@@ -586,6 +586,7 @@ def create_git_repo(temp_dir: Path) -> Path:
 def add_conventional_commits(repo: Path, commits: List[Dict[str, str]]) -> None:
     """Add conventional commits to a git repo."""
     import subprocess
+
     for i, commit in enumerate(commits):
         file_path = repo / f"file_{i}.txt"
         file_path.write_text(commit.get("content", f"Content {i}"))
@@ -596,6 +597,7 @@ def add_conventional_commits(repo: Path, commits: List[Dict[str, str]]) -> None:
 # ============================================================================
 # PYTEST CONFIGURATION
 # ============================================================================
+
 
 def pytest_configure(config):
     """Configure pytest with custom markers."""
@@ -624,10 +626,12 @@ def pytest_collection_modifyitems(config, items):
 # ASYNC FIXTURES
 # ============================================================================
 
+
 @pytest.fixture(scope="session")
 def event_loop():
     """Create event loop for async tests."""
     import asyncio
+
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()

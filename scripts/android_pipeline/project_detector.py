@@ -7,11 +7,12 @@ Automatically inspects repository root to detect project architecture
 
 import os
 
+
 class ProjectTypeDetector:
     @staticmethod
     def detect(project_path="."):
         root = os.path.abspath(project_path)
-        
+
         if os.path.exists(os.path.join(root, "pubspec.yaml")):
             return "Flutter"
         elif os.path.exists(os.path.join(root, "package.json")):
@@ -23,7 +24,11 @@ class ProjectTypeDetector:
             except Exception:
                 pass
             return "Node.js / React Native"
-        elif os.path.exists(os.path.join(root, "build.gradle")) or os.path.exists(os.path.join(root, "build.gradle.kts")) or os.path.exists(os.path.join(root, "settings.gradle")):
+        elif (
+            os.path.exists(os.path.join(root, "build.gradle"))
+            or os.path.exists(os.path.join(root, "build.gradle.kts"))
+            or os.path.exists(os.path.join(root, "settings.gradle"))
+        ):
             # Check for KMP
             bg_kts = os.path.join(root, "build.gradle.kts")
             if os.path.exists(bg_kts):
@@ -34,10 +39,12 @@ class ProjectTypeDetector:
                 except Exception:
                     pass
             return "Native Android (Gradle)"
-            
+
         return "Unknown / Generic Codebase"
+
 
 if __name__ == "__main__":
     import sys
+
     path = sys.argv[1] if len(sys.argv) > 1 else "."
     print(ProjectTypeDetector.detect(path))

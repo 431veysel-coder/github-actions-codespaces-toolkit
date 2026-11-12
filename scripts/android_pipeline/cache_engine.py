@@ -8,6 +8,7 @@ and acceleration layers for cloud builds.
 import os
 import shutil
 
+
 class CacheEngine:
     @staticmethod
     def clean_local_gradle_caches(project_path="."):
@@ -16,7 +17,7 @@ class CacheEngine:
         targets = [
             os.path.join(project_path, ".gradle"),
             os.path.join(project_path, "build"),
-            os.path.join(project_path, "app/build")
+            os.path.join(project_path, "app/build"),
         ]
         for t in targets:
             if os.path.exists(t):

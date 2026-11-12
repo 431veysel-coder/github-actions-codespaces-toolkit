@@ -1,341 +1,245 @@
-# GitHub Actions & Codespaces Toolkit (Nexus OS v2.7.0)
+# GitHub Actions & Codespaces Toolkit — **App Factory v3.0.0**
 
 [![Toolkit CI](https://github.com/431veysel-coder/github-actions-codespaces-toolkit/actions/workflows/toolkit-ci.yml/badge.svg)](https://github.com/431veysel-coder/github-actions-codespaces-toolkit/actions/workflows/toolkit-ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
-[![MCP Tools](https://img.shields.io/badge/MCP_Tools-33-brightgreen.svg)](https://github.com/431veysel-coder/github-actions-codespaces-toolkit)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+[![MCP Tools](https://img.shields.io/badge/MCP_Tools-39-brightgreen.svg)](#-mcp-tools-39)
 
-An industrial-grade, autonomous cloud build & orchestration toolkit designed for the **Minis AI Agent** ecosystem. It bridges resource-constrained local environments (Alpine PRoot) with high-performance remote cloud infrastructure (**GitHub Actions** and **GitHub Codespaces**) to execute heavy Android compilation, automated self-healing, secure keystore vaulting, and GitOps workflows — now with **Minis Nexus** isolated build integration and GitHub Actions quota optimization.
+**Fully automated Android application production system.** Idea → compilable project → cloud build → signed APK → verification → release. One command, zero manual steps, runs from a phone.
+
+Built for the **Minis AI Agent** ecosystem: it bridges a resource-constrained on-device Alpine PRoot with unlimited GitHub cloud capacity.
 
 ---
 
-## 🏛️ Architecture & Execution Hierarchy (1 - 3 - 4)
+## 🎯 What it does
+
+```text
+  "Build me a notes app called Anı Defteri"
+                    │
+                    ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │ 1. SCAFFOLD   settings.gradle.kts, app/build.gradle.kts,    │
+  │               AndroidManifest, MainActivity (Compose/XML),  │
+  │               resources, proguard, wrapper, .gitignore      │
+  ├─────────────────────────────────────────────────────────────┤
+  │ 2. WORKFLOW   android-build.yml installed (lint+test+build) │
+  ├─────────────────────────────────────────────────────────────┤
+  │ 3. PUSH       git init → commit → gh repo create → push     │
+  ├─────────────────────────────────────────────────────────────┤
+  │ 4. BUILD      GitHub Actions: JDK 17 + SDK + Gradle cache   │
+  │               assembleDebug / assembleRelease               │
+  ├─────────────────────────────────────────────────────────────┤
+  │ 5. POLL       run watched to completion, logs on failure    │
+  ├─────────────────────────────────────────────────────────────┤
+  │ 6. DOWNLOAD   APK artifact pulled back to the device        │
+  ├─────────────────────────────────────────────────────────────┤
+  │ 7. PROFILE    size / DEX / native libs / assets report      │
+  ├─────────────────────────────────────────────────────────────┤
+  │ 8. INSTALL    package installer opens on the phone          │
+  └─────────────────────────────────────────────────────────────┘
+                    │
+                    ▼
+              📱 Working APK
+```
+
+---
+
+## 🏛️ Execution hierarchy (1 - 3 - 4)
 
 | Tier | Environment | Purpose |
 | :--- | :--- | :--- |
-| **Level 1** | **Minis PRoot (Local)** | Code editing, pre-flight analysis, orchestration, git version control, and orchestrating cloud tasks. |
-| **Level 3** | **GitHub Actions (Cloud CI/CD)** | Heavy compilation, Android APK/AAB builds (`assembleDebug`/`assembleRelease`), test automation, and artifact packaging. |
-| **Level 4** | **GitHub Codespaces (Cloud VM)** | Interactive debugging, full Linux containers, and direct cloud terminal access. |
+| **Level 1** | Minis PRoot (on device) | Code generation, pre-flight, orchestration, git, artifact analysis |
+| **Level 3** | GitHub Actions (cloud CI) | Heavy compilation (APK/AAB), lint, unit tests, signing, artifact upload |
+| **Level 4** | GitHub Codespaces (cloud VM) | Interactive debugging, full Linux containers |
+
+The device decides and verifies; the cloud does the heavy lifting.
 
 ---
 
-## 🛠️ Core Capabilities & Modules
+## 🚀 Quick start
 
-| # | Module | Scripts | Key Features |
-|---|--------|---------|--------------|
-| 1 | **Autonomous Self-Healing** | `auto_fixer.py`, `builidroid_fixer.py` | Diagnoses build failures (SDK licenses, missing permissions, ProGuard `-keep`, AAPT2, Kotlinc, D8/R8) and automatically applies patches, commits, and pushes fixes. **Circuit breaker** (max 3 attempts per error fingerprint) prevents infinite loops. |
-| 2 | **Security & Vault Crypto** | `vault_crypto.py`, `vault_adapter.py` | AES-256 Fernet encryption, binary `.jks` keystore base64 encoding, enterprise KMS (AWS KMS, HashiCorp Vault) integration. **Audit logging** for all secret access. |
-| 3 | **App Size Profiler & Optimizer** | `apk_profiler.py`, `size_optimizer.py` | Inspects APK size, DEX method counts, ABI splits, asset consumption, AAB bundle generation |
-| 4 | **Pre-flight Dependency Analyzer** | `dependency_graph.py`, `project_detector.py` | Validates Gradle wrappers, Android Manifest permissions, SDK compliance, detects project type (Native, Flutter, React Native, KMP) |
-| 5 | **Multi-Tier Memory Manager** | `memory_manager.py`, `sqlite_memory_manager.py` | SQLite-backed persistent memory with WAL mode, concurrent access safety, TTL-based cleanup |
-| 6 | **Background Daemon** | `autonomous_daemon.py`, `autonomous_nexus.py` | Asynchronously monitors workflow runs and triggers automated recovery loops |
-| 7 | **Security Guardians** | `guardians.py`, `security_acl.py` | Manifest debuggable flags, `allowBackup` checks, HITL (Human-In-The-Loop) approval gates. **Allowlist-based command validation** |
-| 8 | **Visual UI Testing** | `appium_bridge.py` | Translate natural language prompts into Appium WebDriver automation actions |
-| 9 | **Changelog & SBOM** | `changelog_automator.py`, `sbom_generator.py` | Auto-generate CHANGELOG.md from git history (Conventional Commits), CycloneDX 1.4 SBOM compliance reports |
-| 10 | **Dashboard & Versioning** | `dashboard_generator.py`, `version_bumper.py` | Telemetry dashboards, automated versionCode/versionName bumping from Git history |
-| 11 | **Cache & GitOps** | `cache_engine.py`, `gitops_manager.py` | Gradle cache cleanup, lock resolution, automated PR creation for GitOps |
-| 12 | **Build Helpers** | `build_helpers/gradle_wrapper.py`, `deps_resolver.py`, `license_checker.py`, `proguard_gen.py` | Gradle wrapper validation, multi-ecosystem dependency resolution, SPDX license compliance, ProGuard rule generation |
-| 13 | **Minis Nexus Integration** (NEW) | `nexus_builder.py`, `keystore_manager.py` | Quota-optimized isolated build, keystore lifecycle (generate/sign/verify/backup), artifact verification |
+### 1. Create a project
 
----
-
-## 📋 MCP Tools Inventory (33 Active Tools)
-
-The MCP server (`mcp_server/server.py`) exposes 33 typed tools for AI agent invocation:
-
-### GitHub Actions & Workflows (4)
-- `list_workflows` — List workflows for a repository
-- `trigger_workflow` — Trigger workflow dispatch with optional inputs
-- `list_workflow_runs` — List recent runs with status/conclusion
-- `view_run_log` — View failed or full logs for a run
-
-### GitHub Codespaces (3)
-- `list_codespaces` — List active Codespaces
-- `create_codespace` — Provision new Codespace
-- `delete_codespace` — Terminate Codespace
-
-### Android Production Pipeline (7)
-- `verify_android_project` — Pre-flight check (SDK, Manifest, Gradle, deps)
-- `diagnose_run_failure` — Intelligent log analysis (AAPT2, Kotlinc, D8, gomobile, licenses)
-- `download_run_artifacts` — Download APKs/AABs from completed runs
-- `profile_built_apk` — Inspect APK size, DEX count, native libs, assets
-- `calculate_app_size_metrics` — Detailed size/ABI/DEX metrics
-- `clean_pipeline_caches` — Clean stale Gradle caches and build dirs
-- `encode_keystore_binary` — Base64 encode `.jks` for GitHub Secrets
-
-### Self-Healing & GitOps (3)
-- `auto_fix_build` — Closed-loop self-healing patch + commit/push
-- `builidroid_deep_heal` — Advanced semantic error analysis (>90% success)
-- `create_gitops_pr` — Automated PR for GitOps workflow
-
-### Nexus OS & Security (4)
-- `run_autonomous_cycle` — Full closed-loop cybernetic build & telemetry
-- `inspect_security_guardians` — Android security compliance check
-- `check_security_acl` — Command/file path validation against policies
-- `trigger_daemon_cycle` — Single poll & self-heal cycle
-
-### Crypto & Memory (3)
-- `encrypt_vault_secret` — AES-256 Fernet encryption (Kriptonik)
-- `save_pipeline_memory` — Multi-tier memory (compilation/packaging/transient)
-- `resolve_enterprise_secret` — Secret resolution from KMS/Vault/Local
-
-### Sprint-0 Features (3)
-- `generate_changelog` — Auto CHANGELOG.md from git commits and tags
-- `generate_sbom` — CycloneDX Software Bill of Materials JSON
-- `detect_project_architecture` — Auto-detect Native/Flutter/React Native/KMP
-
-### Minis Nexus Integration (NEW - 6)
-- `nexus_builder_preflight` — Local pre-flight checks for Nexus project
-- `nexus_builder_trigger` — Trigger Nexus Android build workflow
-- `nexus_builder_status` — Check recent Nexus build statuses
-- `nexus_keystore_generate` — Generate new Android keystore (.jks) with secure defaults
-- `nexus_keystore_sign` — Sign APK/AAB with keystore from vault
-- `nexus_artifact_verify` — Verify APK/AAB signature and integrity
-- `nexus_keystore_backup` — Encrypted backup of keystore to vault
-
----
-
-## 🚀 Quick Start Guide
-
-### Prerequisites
-- Minis app with Alpine PRoot (aarch64)
-- GitHub CLI (`gh`) authenticated: `gh auth login`
-- Python 3.11+ with `mcp` package
-- Android SDK/NDK (for local pre-flight)
-
-### Installation
 ```bash
-# Clone skill
-git clone https://github.com/431veysel-coder/github-actions-codespaces-toolkit.git \
-  /var/minis/skills/github-actions-codespaces
-
-# Register MCP server in Minis
-minis-config set mcp.servers.github-actions-codespaces-toolkit '{
-  "command": "python3",
-  "args": ["/var/minis/skills/github-actions-codespaces/mcp_server/server.py"],
-  "env": {"GITHUB_TOKEN": "$$GITHUB_TOKEN"}
-}'
+python3 scripts/android_pipeline/app_factory.py scaffold AniDefteri \
+  --package com.ornek.anidefteri \
+  --app-name "Anı Defteri" \
+  --ui compose
 ```
 
-### Local Pre-flight & Testing
+Produces 13 files: a project that actually compiles, with Gradle 8.7 wrapper
+properties, Compose BOM 2024.06, Material3, adaptive launcher icon, quota-
+optimized `gradle.properties` (`-Xmx3g`, parallel, caching, configuration cache).
+
+### 2. Build it in the cloud
+
 ```bash
-# 1. Verify Android project readiness
-python3 scripts/android_pipeline/dependency_graph.py .
-
-# 2. Run full test suite
-python3 tests/test_suite.py
-
-# 3. Test individual scripts
-python3 scripts/android_pipeline/vault_crypto.py
-python3 scripts/android_pipeline/changelog_automator.py v1.0.0
-python3 scripts/android_pipeline/sbom_generator.py
+python3 scripts/android_pipeline/app_factory.py build --repo owner/AniDefteri
 ```
 
-### Minis Nexus Build Commands
+Dispatches `.github/workflows/android-build.yml`, polls to completion, reports the conclusion.
+
+### 3. Pull and install the APK
+
 ```bash
-# Pre-flight check (quota-optimized)
-python3 scripts/nexus_builder.py preflight
-
-# Trigger build (path-filtered, cached, 25min timeout)
-python3 scripts/nexus_builder.py trigger
-
-# Check build status
-python3 scripts/nexus_builder.py status
-
-# Generate keystore (RSA 2048, 10000 days validity)
-python3 scripts/android_pipeline/keystore_manager.py generate \
-  --alias minis-nexus \
-  --storepass "$STORE_PASS" \
-  --keypass "$KEY_PASS"
-
-# Sign APK/AAB
-python3 scripts/android_pipeline/keystore_manager.py sign \
-  --apk app/build/outputs/apk/release/app-release.apk \
-  --alias minis-nexus \
-  --storepass "$STORE_PASS" \
-  --keypass "$KEY_PASS"
-
-# Verify signature
-python3 scripts/android_pipeline/keystore_manager.py verify \
-  --apk app/build/outputs/apk/release/app-release-signed.apk
-
-# Backup keystore (encrypted to vault)
-python3 scripts/android_pipeline/keystore_manager.py backup \
-  --alias minis-nexus \
-  --storepass "$STORE_PASS"
-
-# List keystores
-python3 scripts/android_pipeline/keystore_manager.py list
+gh run download <run-id> --repo owner/AniDefteri --dir artifacts/
+python3 scripts/android_pipeline/apk_profiler.py artifacts/*/app-debug.apk
 ```
 
-### Via MCP (Minis Chat)
+### Or run the whole chain in one call
+
 ```bash
-# Nexus pre-flight
-minis-mcp-cli call github-actions-codespaces-toolkit nexus_builder_preflight '{}'
-
-# Trigger Nexus build
-minis-mcp-cli call github-actions-codespaces-toolkit nexus_builder_trigger '{
-  "repo": "431veysel-coder/github-actions-codespaces-toolkit"
-}'
-
-# Check status
-minis-mcp-cli call github-actions-codespaces-toolkit nexus_builder_status '{"limit": 5}'
-
-# Generate keystore
-minis-mcp-cli call github-actions-codespaces-toolkit nexus_keystore_generate '{
-  "alias": "minis-nexus",
-  "storepass": "your-store-password",
-  "keypass": "your-key-password"
-}'
-
-# Sign APK
-minis-mcp-cli call github-actions-codespaces-toolkit nexus_keystore_sign '{
-  "apk_path": "app/build/outputs/apk/release/app-release.apk",
-  "alias": "minis-nexus",
-  "storepass": "your-store-password",
-  "keypass": "your-key-password"
-}'
-
-# Verify artifact
-minis-mcp-cli call github-actions-codespaces-toolkit nexus_artifact_verify '{
-  "apk_path": "app/build/outputs/apk/release/app-release-signed.apk"
-}'
-
-# Backup keystore
-minis-mcp-cli call github-actions-codespaces-toolkit nexus_keystore_backup '{
-  "alias": "minis-nexus",
-  "storepass": "your-store-password"
-}'
+python3 scripts/android_pipeline/app_factory.py run AniDefteri \
+  --package com.ornek.anidefteri --repo owner/AniDefteri --install
 ```
 
-### Production Android Build Workflow
+### Via MCP (from a Minis chat)
+
 ```bash
-# 1. Copy production workflow template to your repo
-cp templates/.github/workflows/android-production-pipeline.yml \
-   /path/to/your/repo/.github/workflows/
+minis-mcp-cli call github-actions-codespaces-toolkit create_android_project '{
+  "project_name": "AniDefteri",
+  "package_name": "com.ornek.anidefteri",
+  "ui_mode": "compose"
+}'
 
-# 2. Configure GitHub Secrets:
-#    - KEYSTORE_BASE64 (base64 encoded .jks)
-#    - KEYSTORE_PASSWORD
-#    - KEY_ALIAS
-#    - KEY_PASSWORD
+minis-mcp-cli call github-actions-codespaces-toolkit build_android_project '{
+  "repo": "owner/AniDefteri",
+  "timeout_minutes": 30
+}'
 
-# 3. Trigger via MCP
-minis-mcp-cli call github-actions-codespaces-toolkit trigger_workflow '{
-  "repo": "your-org/your-repo",
-  "workflow": "android-production-pipeline.yml"
+minis-mcp-cli call github-actions-codespaces-toolkit diff_artifacts '{
+  "apk_a": "/path/v1.0.0.apk",
+  "apk_b": "/path/v1.1.0.apk"
 }'
 ```
 
 ---
 
-## 📁 Project Structure
+## 📦 Release pipeline
+
+```bash
+python3 scripts/android_pipeline/release_manager.py owner/AniDefteri \
+  --bump minor \
+  --assets app/build/outputs/apk/release/app-release.apk
+```
+
+Chain: `version bump (versionCode+1, semver)` → `CHANGELOG.md (Conventional Commits)` → `git tag` → `gh release create` with APK attached.
+
+---
+
+## 🧰 MCP Tools (39)
+
+### App Factory (5)
+| Tool | Purpose |
+|---|---|
+| `create_android_project` | Generate a complete compilable Android project + CI workflow + git commit |
+| `build_android_project` | Dispatch a cloud build and watch it to completion |
+| `create_github_release` | Version bump → changelog → tag → GitHub Release with assets |
+| `diff_artifacts` | Compare two APK/AAB builds (size, DEX, libs, permissions) |
+| `install_apk_on_device` | Open the system package installer for a built APK |
+
+### Keystore lifecycle (4)
+`keystore_generate` · `keystore_sign` · `artifact_verify` · `keystore_backup`
+(RSA 2048, SHA256withRSA, 10000-day validity, AES-256 Fernet vault backup)
+
+### GitHub Actions & Codespaces (7)
+`list_workflows` · `trigger_workflow` · `list_workflow_runs` · `view_run_log` · `list_codespaces` · `create_codespace` · `delete_codespace`
+
+### Android production pipeline (7)
+`verify_android_project` · `diagnose_run_failure` · `download_run_artifacts` · `profile_built_apk` · `calculate_app_size_metrics` · `clean_pipeline_caches` · `encode_keystore_binary`
+
+### Self-healing & GitOps (3)
+`auto_fix_build` · `builidroid_deep_heal` · `create_gitops_pr`
+
+### Autonomous & security (5)
+`run_autonomous_cycle` · `inspect_security_guardians` · `check_security_acl` · `trigger_daemon_cycle` · `prepare_ota_install`
+
+### Crypto, memory & reporting (6)
+`encrypt_vault_secret` · `save_pipeline_memory` · `resolve_enterprise_secret` · `generate_changelog` · `generate_sbom` · `detect_project_architecture`
+
+### Build utilities (2)
+`bump_gradle_version` · `translate_visual_ui_test` (Appium: natural language → UI actions)
+
+---
+
+## 🔧 Core modules
+
+| Module | File | Capability |
+|---|---|---|
+| **Project scaffolder** | `project_scaffolder.py` | Complete Gradle project generation (Compose/XML, SDK validation, icon, wrapper) |
+| **App factory** | `app_factory.py` | 8-stage transactional pipeline with telemetry + checkpoints |
+| **Release manager** | `release_manager.py` | Semver bump, changelog, tag, GitHub Release with assets |
+| **Artifact diff** | `artifact_diff.py` | APK/AAB comparison, size/DEX/lib/permission delta, verdict |
+| **Autonomous core** | `autonomous_factory.py` | Pre-flight → self-heal loop → cloud dispatch, telemetry log (JSONL) |
+| **Self-healing** | `auto_fixer.py`, `builidroid_fixer.py` | Circuit breaker (fingerprint-based, max 3), AAPT2/Kotlinc/D8/ProGuard patches |
+| **Security** | `security_utils.py`, `security_acl.py`, `guardians.py` | Injection/path-traversal validation, secret masking, allowlist, audit log, HITL gates |
+| **Keystore** | `keystore_manager.py` | generate / sign / verify / backup / restore |
+| **Vault crypto** | `vault_crypto.py`, `vault_adapter.py` | AES-256 Fernet, AWS KMS + HashiCorp Vault backends |
+| **Profiling** | `apk_profiler.py`, `size_optimizer.py` | Size, DEX count, ABI splits, AAB |
+| **Reporting** | `changelog_automator.py`, `sbom_generator.py`, `dashboard_generator.py` | Keep a Changelog, CycloneDX 1.4 SBOM, HTML telemetry |
+| **Memory** | `sqlite_memory_manager.py`, `memory_manager.py` | SQLite WAL, TTL cleanup, multi-tier |
+| **Orchestration** | `pipeline_orchestrator.py` | DAG execution, parallel stages, checkpoints, HITL gates |
+
+---
+
+## 🧪 Testing
+
+```bash
+python3 tests/test_suite.py     # unit + security + contract + integration
+```
+
+| Category | What it covers |
+|---|---|
+| **Unit** | Auto-fixer, size optimizer, scaffolder, release manager, artifact diff |
+| **Security** | Injection, path traversal, secret leaking, command allowlist |
+| **Contract** | Input/output schemas for all 39 MCP tools |
+| **Integration** | GitHub Actions/Codespaces (respx-mocked), keystore lifecycle, end-to-end scaffold |
+
+Keystore integration tests skip automatically where the JVM cannot run (PRoot
+sandboxes restrict exec pages); they run for real on CI. Lint: `black`, `isort`,
+`flake8` (real defects: undefined names, redefinitions, syntax).
+
+---
+
+## 📁 Repository layout
 
 ```
-github-actions-codespaces-toolkit/
-├── mcp_server/
-│   └── server.py                 # MCP server (33 tools)
-├── scripts/
-│   ├── gh_actions.py             # GitHub Actions CLI
-│   ├── gh_codespaces.py          # Codespaces CLI
-│   ├── setup_wizard.py           # Interactive project setup
-│   ├── nexus_builder.py          # Minis Nexus CLI (preflight, trigger, status)
-│   └── android_pipeline/         # 25+ pipeline scripts
-│       ├── keystore_manager.py   # Generate, sign, verify, backup keystores
-│       ├── auto_fixer.py         # Granular circuit breaker (persistent state)
-│       ├── security_utils.py     # Secret masking + audit logging + allowlist
-│       ├── config.py             # YAML + env overrides + XDG + validation
-│       ├── sbom_generator.py     # CycloneDX 1.4 SBOM generator
-│       ├── changelog_automator.py # Keep a Changelog + Conventional Commits
-│       ├── build_helpers/        # Gradle wrapper, deps resolver, license, proguard
-│       └── ... (20+ other scripts)
-├── apps/minis-nexus/             # Minis Nexus isolated Android project
-│   ├── gradle.properties         # JVM tuning, caching, parallel execution
-│   └── NEXUS_ULTRA_BLUEPRINT.md # Architecture blueprint v3.0
-├── templates/
-│   └── .github/workflows/
-│       ├── android-build.yml       # Simple template (legacy)
-│       ├── android-production-pipeline.yml  # Production template
-│       └── nexus-android-build.yml  # Nexus quota-optimized workflow
-├── tests/                        # 26 passing tests (unit + integration + security)
-│   ├── test_suite.py             # Main test suite
-│   ├── test_auto_fixer.py
-│   ├── test_size_optimizer.py
-│   ├── contracts/
-│   │   └── test_mcp_contracts.py
-│   ├── integration/
-│   │   └── test_integration.py
-│   └── security/
-│       └── test_security.py
-├── .github/
-│   ├── ISSUE_TEMPLATE/
-│   │   ├── bug_report.md
-│   │   └── feature_request.md
-│   └── PULL_REQUEST_TEMPLATE.md
-├── SKILL.md                      # Minis Skill manifest
-├── ANDROID_PIPELINE.md           # Pipeline technical spec
-├── README.md                     # This file
-├── CONTRIBUTING.md
-├── SECURITY.md
-├── LICENSE
-├── Dockerfile
-└── CHANGELOG.md                  # Auto-generated (Keep a Changelog)
+.github/workflows/toolkit-ci.yml     CI: test, lint, validate-mcp, docs, docker, release
+mcp_server/server.py                 39 MCP tools
+scripts/
+  android_pipeline/
+    app_factory.py                   end-to-end pipeline
+    project_scaffolder.py            project generator
+    release_manager.py               release chain
+    artifact_diff.py                 APK comparison
+    autonomous_factory.py            closed-loop orchestrator
+    ... (30+ modules)
+  gh_actions.py                      GitHub Actions REST client (httpx)
+  gh_codespaces.py                   Codespaces REST client (httpx)
+  cli.py                             unified CLI
+templates/.github/workflows/
+  android-app-factory.yml            build + auto-release workflow for generated apps
+tests/                               unit, security, contract, integration
 ```
 
 ---
 
-## 🔧 Configuration
+## 🔐 Security
 
-### Environment Variables
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `GITHUB_TOKEN` | Yes | GitHub PAT (scopes: `repo`, `workflow`, `codespace`, `admin:repo_hook`) |
-| `ANDROID_SDK_ROOT` | No | Android SDK path (default: `/opt/android-sdk`) |
-| `GRADLE_USER_HOME` | No | Gradle cache directory |
-| `VAULT_BACKEND` | No | Secret backend: `local`, `aws_kms`, `hashicorp_vault` |
-| `VAULT_TOKEN` | No | HashiCorp Vault token |
-| `AWS_KMS_KEY_ID` | No | AWS KMS key ID for encryption |
-
-### MCP Server Config (Minis)
-```json
-{
-  "mcpServers": {
-    "github-actions-codespaces-toolkit": {
-      "command": "python3",
-      "args": ["/var/minis/skills/github-actions-codespaces/mcp_server/server.py"],
-      "env": {
-        "GITHUB_TOKEN": "$$GITHUB_TOKEN"
-      }
-    }
-  }
-}
-```
+- Command injection and path traversal validation on every MCP entry point
+- Secret masking (GitHub tokens, AWS keys, JWTs, private keys) in all outputs
+- 4500/hour GitHub API rate-limit budget
+- Allowlist-based command execution + audit log with correlation IDs
+- Keystore backups encrypted with AES-256 (Fernet), integrity-verified
+- Manifest guardians: `debuggable`, `allowBackup`, exported components
 
 ---
 
 ## 🤝 Contributing
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the pull request submission process.
-
-### Development Workflow
-1. Fork the repository
-2. Create feature branch: `git checkout -b feat/amazing-feature`
-3. Run tests: `python3 tests/test_suite.py`
-4. Commit with conventional commits: `git commit -m 'feat: add amazing feature'`
-5. Push: `git push origin feat/amazing-feature`
-6. Open Pull Request
-
----
+Read [CONTRIBUTING.md](CONTRIBUTING.md). Run `python3 tests/test_suite.py`
+before every PR; commits follow Conventional Commits.
 
 ## 📄 License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- **Minis AI Agent** platform for the execution environment
-- **GitHub CLI** for Actions/Codespaces integration
-- **CycloneDX** for SBOM specification
-- **Appium** for visual UI testing framework
+MIT — see [LICENSE](LICENSE).

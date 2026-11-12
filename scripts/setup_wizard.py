@@ -9,11 +9,13 @@ import os
 import subprocess
 import sys
 
+
 def print_banner():
     print("==================================================")
-    print("  Nexus OS / GitHub Actions & Codespaces Toolkit  ")
+    print("  App Factory / GitHub Actions & Codespaces Toolkit  ")
     print("              Interactive Setup Wizard            ")
     print("==================================================")
+
 
 def check_gh_cli():
     print("[*] Checking GitHub CLI (gh) installation...")
@@ -24,6 +26,7 @@ def check_gh_cli():
     except Exception:
         print(" [!] GitHub CLI (gh) not found or not in PATH.")
         return False
+
 
 def check_auth():
     print("[*] Verifying GitHub Authentication status...")
@@ -39,6 +42,7 @@ def check_auth():
         print(" [!] Auth check failed.")
         return False
 
+
 def verify_git_repo():
     print("[*] Checking Git repository initialization...")
     if os.path.exists(".git"):
@@ -49,17 +53,21 @@ def verify_git_repo():
         subprocess.run(["git", "init"], check=True)
         return True
 
+
 def main():
     print_banner()
     if not check_gh_cli():
         print("[!] Please install GitHub CLI to proceed.")
         sys.exit(1)
-        
+
     if not check_auth():
-        print("[!] Action required: Please authenticate using 'gh auth login' or configure GITHUB_TOKEN environment variable.")
-        
+        print(
+            "[!] Action required: Please authenticate using 'gh auth login' or configure GITHUB_TOKEN environment variable."
+        )
+
     verify_git_repo()
     print("\n[+] Setup Wizard complete! Your environment is primed for autonomous cloud builds.")
+
 
 if __name__ == "__main__":
     main()

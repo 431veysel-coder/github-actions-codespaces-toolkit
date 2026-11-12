@@ -1,4 +1,4 @@
-# Standardized Android Build Environment (Nexus OS Builder)
+# Standardized Android Build Environment (App Factory Builder)
 FROM eclipse-temurin:17-jdk-jammy
 
 # Environment variables

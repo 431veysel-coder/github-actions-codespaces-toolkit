@@ -1,96 +1,64 @@
 #!/usr/bin/env python3
 """
-Main Test Suite for GitHub Actions & Codespaces Toolkit
-Runs all unit, integration, security, and contract tests.
+Main Test Suite Runner for GitHub Actions & Codespaces Toolkit (App Factory)
+
+Runs every test file directly (no marker filtering — markers are optional
+labels, not a collection mechanism). Categories map to directories/files:
+
+  unit        tests/test_auto_fixer.py, tests/test_size_optimizer.py,
+              tests/test_app_factory_modules.py
+  integration tests/integration/test_integration.py   (respx-mocked; keystore
+              tests auto-skip where the JVM cannot run, e.g. PRoot sandboxes)
+  contract    tests/contracts/test_mcp_contracts.py
+  security    tests/security/test_security.py
+
+Exit code 0 only when ALL categories pass.
 """
 
-import os
-import sys
 import subprocess
+import sys
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
-def run_pytest(test_path: str, markers: str = None, coverage: bool = False) -> bool:
-    """Run pytest with given parameters."""
-    cmd = [sys.executable, "-m", "pytest", test_path, "-v", "--tb=short"]
-    
-    if markers:
-        cmd.extend(["-m", markers])
-    
-    if coverage:
-        cmd.extend([
-            "--cov=scripts",
-            "--cov=scripts/android_pipeline",
-            "--cov=mcp_server",
-            "--cov-report=term-missing",
-            "--cov-report=html",
-            "--cov-fail-under=80"
-        ])
-    
-    print(f"\n{'='*60}")
-    print(f"Running: {' '.join(cmd)}")
-    print(f"{'='*60}\n")
-    
-    result = subprocess.run(cmd, cwd=Path(__file__).parent.parent)
+CATEGORIES = [
+    ("Unit", ["tests/test_auto_fixer.py", "tests/test_size_optimizer.py", "tests/test_app_factory_modules.py"]),
+    ("Security", ["tests/security/test_security.py"]),
+    ("Contract", ["tests/contracts/test_mcp_contracts.py"]),
+    ("Integration", ["tests/integration/test_integration.py"]),
+]
+
+
+def run_pytest(test_paths, extra_args=None):
+    cmd = [sys.executable, "-m", "pytest"] + test_paths + ["-q", "--tb=short"]
+    if extra_args:
+        cmd += extra_args
+    print(f"\n{'=' * 60}\nRunning: {' '.join(test_paths)}\n{'=' * 60}")
+    result = subprocess.run(cmd, cwd=REPO_ROOT)
     return result.returncode == 0
 
 
 def main():
-    """Main test runner."""
-    print("GitHub Actions & Codespaces Toolkit - Test Suite")
+    print("GitHub Actions & Codespaces Toolkit (App Factory) — Test Suite")
     print("=" * 60)
-    
+
     all_passed = True
-    
-    # Run unit tests (core test_suite.py tests)
-    print("\n📋 Running Unit Tests...")
-    unit_passed = run_pytest("tests/test_suite.py", markers="unit")
-    all_passed = all_passed and unit_passed
-    
-    # Run auto_fixer tests
-    print("\n🔧 Running Auto-Fixer Tests...")
-    auto_fixer_passed = run_pytest("tests/test_auto_fixer.py", markers="unit")
-    all_passed = all_passed and auto_fixer_passed
-    
-    # Run size_optimizer tests
-    print("\n📏 Running Size Optimizer Tests...")
-    size_passed = run_pytest("tests/test_size_optimizer.py", markers="unit")
-    all_passed = all_passed and size_passed
-    
-    # Run security tests
-    print("\n🔒 Running Security Tests...")
-    security_passed = run_pytest("tests/security/test_security.py", markers="security")
-    all_passed = all_passed and security_passed
-    
-    # Run contract tests
-    print("\n📜 Running Contract Tests...")
-    contract_passed = run_pytest("tests/contracts/test_mcp_contracts.py", markers="contract")
-    all_passed = all_passed and contract_passed
-    
-    # Run integration tests
-    print("\n🔗 Running Integration Tests...")
-    integration_passed = run_pytest("tests/integration/test_integration.py", markers="integration")
-    all_passed = all_passed and integration_passed
-    
-    # Summary
+    summary = []
+    for name, paths in CATEGORIES:
+        passed = run_pytest(paths)
+        summary.append((name, passed))
+        all_passed = all_passed and passed
+
     print("\n" + "=" * 60)
     print("TEST SUMMARY")
     print("=" * 60)
-    print(f"Unit Tests:           {'✅ PASS' if unit_passed else '❌ FAIL'}")
-    print(f"Auto-Fixer Tests:     {'✅ PASS' if auto_fixer_passed else '❌ FAIL'}")
-    print(f"Size Optimizer Tests: {'✅ PASS' if size_passed else '❌ FAIL'}")
-    print(f"Security Tests:       {'✅ PASS' if security_passed else '❌ FAIL'}")
-    print(f"Contract Tests:       {'✅ PASS' if contract_passed else '❌ FAIL'}")
-    print(f"Integration Tests:    {'✅ PASS' if integration_passed else '❌ FAIL'}")
+    for name, passed in summary:
+        print(f"{name:14} {'✅ PASS' if passed else '❌ FAIL'}")
     print("-" * 60)
-    print(f"OVERALL:              {'✅ ALL PASSED' if all_passed else '❌ SOME FAILED'}")
+    print(f"OVERALL:       {'✅ ALL PASSED' if all_passed else '❌ SOME FAILED'}")
     print("=" * 60)
-    
-    if not all_passed:
-        sys.exit(1)
+    sys.exit(0 if all_passed else 1)
 
 
 if __name__ == "__main__":
-    # Change to project root
-    os.chdir(Path(__file__).parent.parent)
     main()

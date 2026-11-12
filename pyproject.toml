@@ -1,0 +1,19 @@
+[tool.black]
+line-length = 120
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 120
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests (respx-mocked)",
+    "security: Security tests",
+    "contract: Contract tests for MCP tools",
+    "slow: Slow running tests",
+    "requires_gh: Tests requiring GitHub CLI",
+]
+asyncio_default_fixture_loop_scope = "function"

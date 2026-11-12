@@ -5,10 +5,12 @@ Handles AES-256 Fernet encryption, binary .jks keystore base64 encoding/decoding
 for secure Android code signing, and automated GitHub Secret synchronization.
 """
 
-import os
 import base64
+import os
 import subprocess
+
 from cryptography.fernet import Fernet
+
 
 class VaultCryptoEngine:
     def __init__(self, master_key=None):

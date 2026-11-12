@@ -6,6 +6,7 @@ Handles branch creation, PR generation, status checking, and auto-merging.
 
 import subprocess
 
+
 class GitOpsManager:
     @staticmethod
     def create_feature_branch(branch_name):
@@ -19,12 +20,19 @@ class GitOpsManager:
     def create_pull_request(repo, title, body, head_branch, base_branch="main"):
         try:
             cmd = [
-                "gh", "pr", "create",
-                "--repo", repo,
-                "--title", title,
-                "--body", body,
-                "--head", head_branch,
-                "--base", base_branch
+                "gh",
+                "pr",
+                "create",
+                "--repo",
+                repo,
+                "--title",
+                title,
+                "--body",
+                body,
+                "--head",
+                head_branch,
+                "--base",
+                base_branch,
             ]
             res = subprocess.run(cmd, capture_output=True, text=True, check=True)
             return True, res.stdout.strip()
