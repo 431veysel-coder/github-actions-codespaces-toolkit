@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from security_utils import WORKSPACE_ROOT
+
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION = 2
@@ -92,7 +94,8 @@ class CacheEntry:
 class SQLiteMemoryManager:
     """Thread-safe SQLite memory manager with TTL and audit logging"""
 
-    def __init__(self, db_path: str = "/var/minis/workspace/pipeline_memory.db"):
+    def __init__(self, db_path: str = None):
+        db_path = db_path or str(Path(WORKSPACE_ROOT) / "pipeline_memory.db")
         self.db_path = Path(db_path).resolve()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
@@ -137,7 +140,7 @@ class SQLiteMemoryManager:
 
     def _migrate_from_json(self):
         """Migrate data from old file-based JSON storage"""
-        old_base = Path("/var/minis/skills/github-actions-codespaces/data_memory")
+        old_base = Path(WORKSPACE_ROOT) / "data_memory"
         if not old_base.exists():
             return
 

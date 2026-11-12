@@ -7,11 +7,15 @@ persistent global records, and packaging artifacts.
 
 import json
 import os
+from pathlib import Path
 import time
+
+from security_utils import WORKSPACE_ROOT
 
 
 class PipelineMemoryManager:
-    def __init__(self, base_dir="/var/minis/skills/github-actions-codespaces/data_memory"):
+    def __init__(self, base_dir=None):
+        base_dir = base_dir or str(Path(WORKSPACE_ROOT) / "data_memory")
         self.base_dir = os.path.abspath(base_dir)
         self.persistent_dir = os.path.join(self.base_dir, "persistent")
         self.transient_dir = os.path.join(self.base_dir, "transient")

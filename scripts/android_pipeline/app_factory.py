@@ -22,7 +22,7 @@ from pathlib import Path
 from apk_profiler import APKProfiler
 from artifact_diff import ArtifactDiffer
 from project_scaffolder import AndroidProjectScaffolder
-from security_utils import safe_run, validate_github_repo
+from security_utils import WORKSPACE_ROOT, safe_run, validate_github_repo
 
 WORKFLOW_TEMPLATE = (
     Path(__file__).resolve().parents[2] / "templates" / ".github" / "workflows" / "android-app-factory.yml"
@@ -33,7 +33,7 @@ class AppFactory:
     """End-to-end Android app production pipeline."""
 
     def __init__(self, workdir=None, telemetry=True):
-        self.workdir = Path(workdir or "/var/minis/workspace/app-factory").resolve()
+        self.workdir = Path(workdir or str(WORKSPACE_ROOT / "app-factory")).resolve()
         self.workdir.mkdir(parents=True, exist_ok=True)
         self.telemetry = telemetry
         self.telemetry_file = self.workdir / "factory-telemetry.jsonl"

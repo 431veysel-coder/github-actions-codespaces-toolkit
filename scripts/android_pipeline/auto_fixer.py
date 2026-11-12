@@ -12,6 +12,7 @@ import os
 from typing import List, Optional, Tuple
 
 from security_utils import (
+    WORKSPACE_ROOT,
     SecurityError,
     ValidationError,
     safe_git_command,
@@ -28,7 +29,7 @@ class AutoFixEngine:
         self.app_dir = os.path.join(self.project_path, "app")
         # Use persistent state file in workspace (survives CI/CD runs)
         self.state_file = os.path.join(
-            "/var/minis/workspace", f"autofix_state_{hashlib.sha256(self.project_path.encode()).hexdigest()[:16]}.json"
+            str(WORKSPACE_ROOT), f"autofix_state_{hashlib.sha256(self.project_path.encode()).hexdigest()[:16]}.json"
         )
 
     def _compute_error_fingerprint(

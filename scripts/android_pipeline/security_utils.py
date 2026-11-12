@@ -19,7 +19,35 @@ from typing import Any, Dict, List, Optional, Tuple
 # CONSTANTS
 # ============================================================================
 
-WORKSPACE_ROOT = Path("/var/minis/workspace").resolve()
+
+def _resolve_workspace_root() -> Path:
+    """Resolve a writable workspace root, portable across environments.
+
+    Order: $MINIS_WORKSPACE -> /var/minis/workspace (Minis on-device) ->
+    ~/.minis/workspace -> <tmp>/minis-workspace. The first candidate that
+    exists (or can be created) and is writable wins, so the toolkit also runs
+    in plain CI containers where /var/minis does not exist.
+    """
+    env = os.environ.get("MINIS_WORKSPACE")
+    candidates = []
+    if env:
+        candidates.append(Path(env))
+    candidates += [Path("/var/minis/workspace"), Path.home() / ".minis" / "workspace"]
+    for candidate in candidates:
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            probe = candidate / ".write_probe"
+            probe.write_text("", encoding="utf-8")
+            probe.unlink()
+            return candidate.resolve()
+        except (OSError, PermissionError):
+            continue
+    fallback = Path(tempfile.gettempdir()) / "minis-workspace"
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback.resolve()
+
+
+WORKSPACE_ROOT = _resolve_workspace_root()
 ARTIFACTS_DIR = WORKSPACE_ROOT / "artifacts"
 ALLOWED_WRITE_ROOTS = [
     WORKSPACE_ROOT,
@@ -512,10 +540,13 @@ AUDIT_LOGGER.setLevel(logging.INFO)
 
 
 def _get_audit_handler():
-    """Get or create audit log handler"""
-    log_dir = Path("/var/minis/workspace/logs")
-    log_dir.mkdir(parents=True, exist_ok=True)
-    handler = logging.FileHandler(log_dir / "security_audit.log", encoding="utf-8")
+    """Get or create audit log handler (degrades to no file logging if unwritable)"""
+    try:
+        log_dir = WORKSPACE_ROOT / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(log_dir / "security_audit.log", encoding="utf-8")
+    except (OSError, PermissionError):
+        handler = logging.NullHandler()
     handler.setFormatter(
         logging.Formatter(
             '{"timestamp": "%(asctime)s", "level": "%(levelname)s", "event": "%(message)s"}',

@@ -8,11 +8,13 @@ Pre-flight -> Cloud Trigger -> Polling & Tracking -> Log Diagnosis -> Artifact D
 import json
 import os
 import subprocess
+from pathlib import Path
 import sys
 import time
 
 from build_monitor import AndroidBuildDiagnostics
 from dependency_graph import AndroidProjectAnalyzer
+from security_utils import WORKSPACE_ROOT
 
 
 class AndroidPipelineOrchestrator:
@@ -91,7 +93,8 @@ class AndroidPipelineOrchestrator:
         )
         return AndroidBuildDiagnostics.analyze_log(res.stdout or res.stderr)
 
-    def download_artifacts(self, run_id, output_dir="/var/minis/workspace/artifacts"):
+    def download_artifacts(self, run_id, output_dir=None):
+        output_dir = output_dir or str(Path(WORKSPACE_ROOT) / "artifacts")
         os.makedirs(output_dir, exist_ok=True)
         print(f"[*] Downloading artifacts for Run ID {run_id} to {output_dir}...")
         cmd = ["gh", "run", "download", run_id, "--repo", self.repo, "--dir", output_dir]

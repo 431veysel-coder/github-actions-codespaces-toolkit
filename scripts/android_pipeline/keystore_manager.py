@@ -20,7 +20,7 @@ pipeline_path = os.path.abspath(os.path.join(os.path.dirname(__file__)))
 if pipeline_path not in sys.path:
     sys.path.append(pipeline_path)
 
-from security_utils import audit_file_access, audit_log, validate_file_path
+from security_utils import WORKSPACE_ROOT, audit_file_access, audit_log, validate_file_path
 from vault_crypto import VaultCryptoEngine
 
 
@@ -30,7 +30,7 @@ class KeystoreManager:
     def __init__(self, vault_backend: str = "local"):
         self.vault = VaultCryptoEngine()
         self.vault_backend = vault_backend
-        self.default_keystore_dir = Path("/var/minis/workspace/keystores")
+        self.default_keystore_dir = Path(WORKSPACE_ROOT) / "keystores"
         self.default_keystore_dir.mkdir(parents=True, exist_ok=True)
 
     def generate_keystore(

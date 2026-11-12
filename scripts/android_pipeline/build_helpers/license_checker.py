@@ -479,7 +479,7 @@ class LicenseChecker:
 
 | Name | Version | Ecosystem | Licenses | Risk | Issues |
 |------|---------|-----------|----------|------|--------|
-{"".join(f"| {d['name']} | {d['version']} | {d['ecosystem']} | {', '.join(d['declared_licenses'])} | {d['risk_level']} | {'; '.join(d['issues'])} |\n" for d in report['dependencies'])}
+{"".join(f"| {d['name']} | {d['version']} | {d['ecosystem']} | {', '.join(d['declared_licenses'])} | {d['risk_level']} | {'; '.join(d['issues'])} |" + chr(10) for d in report['dependencies'])}
 
 ## Policy Violations
 
