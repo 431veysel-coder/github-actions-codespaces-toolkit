@@ -430,25 +430,25 @@ class LicenseChecker:
     <p>Project: {report['project_path']}</p>
     <p>Total Dependencies: {report['total_dependencies']}</p>
     <p>Status: <span class="{'compliant' if report['compliant'] else 'violation'}">{'COMPLIANT' if report['compliant'] else 'NON-COMPLIANT'}</span></p>
-    
+
     <h2>License Distribution</h2>
     <table>
         <tr><th>License</th><th>Count</th></tr>
         {"".join(f"<tr><td>{k}</td><td>{v}</td></tr>" for k, v in report['license_distribution'].items())}
     </table>
-    
+
     <h2>Risk Distribution</h2>
     <table>
         <tr><th>Risk Level</th><th>Count</th></tr>
         {"".join(f"<tr class='risk-{k.lower()}'><td>{k}</td><td>{v}</td></tr>" for k, v in report['risk_distribution'].items())}
     </table>
-    
+
     <h2>Dependencies</h2>
     <table>
         <tr><th>Name</th><th>Version</th><th>Ecosystem</th><th>Licenses</th><th>Risk</th><th>Issues</th></tr>
         {"".join(f"<tr class='risk-{d['risk_level'].lower()}'><td>{d['name']}</td><td>{d['version']}</td><td>{d['ecosystem']}</td><td>{', '.join(d['declared_licenses'])}</td><td>{d['risk_level']}</td><td>{'; '.join(d['issues'])}</td></tr>" for d in report['dependencies'])}
     </table>
-    
+
     <h2>Policy Violations</h2>
     {"<ul>" + "".join(f"<li class='violation'>{v}</li>" for v in report['policy_violations']) + "</ul>" if report['policy_violations'] else "<p>None</p>"}
 </body>
